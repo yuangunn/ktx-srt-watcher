@@ -402,6 +402,9 @@ class App {
     this.configSha = null;
     this.cronIntervalMin = 10;
     this._countdownTimer = null;
+    // CF Worker URL for state mirror reads (optional; falls back to GitHub)
+    const meta = document.querySelector('meta[name="cf-worker-url"]');
+    this._cfWorkerUrl = (meta?.content || '').trim();
   }
 
   async start() {
@@ -448,6 +451,12 @@ class App {
       if (!this._parseCronFromWrangler(wranglerFile?.content)) {
         this._parseCronFromWorkflow(workflowFile?.content);
       }
+      // Best-effort: pull the fresher state mirror from CF Worker /state
+      // if available. The wrangler.toml fetch already gave us the worker
+      // URL family; we derive the public CF URL from that and try.
+      // Falls back silently to the GitHub state.json we already loaded.
+      const fresher = await this._fetchStateMirror().catch(() => null);
+      if (fresher) this.state = fresher;
     } catch (e) {
       if (this._isAuthError(e)) {
         this._handleAuthFailure();
@@ -463,6 +472,15 @@ class App {
     this._loadStats();
   }
 
+  async _fetchStateMirror() {
+    // CF Worker URL is read from the <meta name="cf-worker-url"> tag
+    // in index.html. Empty / missing meta = mirror disabled, falls back
+    // silently to the GitHub Contents API state.json we already loaded.
+    if (!this._cfWorkerUrl) return null;
+    const res = await fetch(`${this._cfWorkerUrl.replace(/\/$/, '')}/state`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  }
   _parseCronFromWrangler(tomlText) {
     if (!tomlText) return false;
     const m = tomlText.match(/crons\s*=\s*\[\s*"([^"]+)"/);

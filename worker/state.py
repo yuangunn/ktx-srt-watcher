@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -120,30 +121,74 @@ def _later(a: str | None, b: str | None) -> str | None:
     return a if a >= b else b
 
 
+def push_to_kv_mirror(state_path: Path | str) -> None:
+    """Best-effort PUT of state.json to the CF Worker /state endpoint.
+
+    PWA reads from there before falling back to the GitHub Contents API,
+    saving ~300ms per page open and avoiding repeated API quota use.
+    Failure is silent — the canonical state still lives in git, and the
+    PWA fallback handles missing/stale mirror data.
+    """
+    cf_url = (os.environ.get("CF_WORKER_URL") or "").rstrip("/")
+    token = os.environ.get("REMINDER_TOKEN") or ""
+    if not cf_url or not token:
+        return
+    try:
+        body = Path(state_path).read_bytes()
+        import urllib.request
+        req = urllib.request.Request(
+            f"{cf_url}/state",
+            data=body,
+            method="PUT",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status not in (200, 202):
+                # Log via stderr; this is a mirror, never critical
+                print(f"state KV mirror push: HTTP {resp.status}", file=sys.stderr)
+    except Exception as e:
+        print(f"state KV mirror push failed: {e}", file=sys.stderr)
+
+
 if __name__ == "__main__":
-    # CLI: python -m worker.state merge OUR_STATE_PATH REMOTE_STATE_PATH
-    # Reads both files, writes the merged result to REMOTE_STATE_PATH
-    # (the file the workflow will commit). Used by .github/workflows/watch.yml
-    # when concurrent runs collide.
-    import sys
+    # CLI:
+    #   python -m worker.state merge OUR_STATE REMOTE_STATE
+    #     Three-way merge for the workflow's concurrent-push race fix.
+    #   python -m worker.state push-mirror STATE_PATH
+    #     Best-effort PUT of state.json to CF Worker /state endpoint
+    #     (PWA fast-read mirror).  Reads CF_WORKER_URL + REMINDER_TOKEN
+    #     from env; silent no-op when either is missing.
 
     def _fail(msg: str, code: int = 2) -> None:
         print(msg, file=sys.stderr)
         sys.exit(code)
 
-    if len(sys.argv) != 4 or sys.argv[1] != "merge":
-        _fail("usage: python -m worker.state merge OUR_STATE REMOTE_STATE")
+    if len(sys.argv) < 2:
+        _fail("usage: python -m worker.state {merge|push-mirror} ARGS")
 
-    ours_path = Path(sys.argv[2])
-    remote_path = Path(sys.argv[3])
-    if not ours_path.exists() or not remote_path.exists():
-        _fail(f"missing state file: ours={ours_path.exists()}, remote={remote_path.exists()}")
-
-    ours = json.loads(ours_path.read_text(encoding="utf-8"))
-    remote = json.loads(remote_path.read_text(encoding="utf-8"))
-    merged = merge_states(ours, remote)
-    remote_path.write_text(
-        json.dumps(merged, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    print(f"merged into {remote_path} ({len(merged.get('watches', {}))} watches)")
+    cmd = sys.argv[1]
+    if cmd == "merge":
+        if len(sys.argv) != 4:
+            _fail("usage: python -m worker.state merge OUR_STATE REMOTE_STATE")
+        ours_path = Path(sys.argv[2])
+        remote_path = Path(sys.argv[3])
+        if not ours_path.exists() or not remote_path.exists():
+            _fail(f"missing state file: ours={ours_path.exists()}, remote={remote_path.exists()}")
+        ours = json.loads(ours_path.read_text(encoding="utf-8"))
+        remote = json.loads(remote_path.read_text(encoding="utf-8"))
+        merged = merge_states(ours, remote)
+        remote_path.write_text(
+            json.dumps(merged, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"merged into {remote_path} ({len(merged.get('watches', {}))} watches)")
+    elif cmd == "push-mirror":
+        if len(sys.argv) != 3:
+            _fail("usage: python -m worker.state push-mirror STATE_PATH")
+        push_to_kv_mirror(sys.argv[2])
+        print("pushed to KV mirror (or silently skipped)")
+    else:
+        _fail(f"unknown command: {cmd}")

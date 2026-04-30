@@ -28,6 +28,14 @@ crons = ["*/30 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SU
 binding = "REMINDERS"
 id = "06eb524fc1df4e119f5cbfbc9e3b4af6"
 
+# STATE: mirror of state.json maintained by the GHA watcher after every
+# successful run. Public GET, auth-required PUT. PWA reads from here for
+# faster updates than GitHub Contents API; git's state.json is still the
+# canonical store and survives CF Worker outage.
+[[kv_namespaces]]
+binding = "STATE"
+id = "e637a6093c6749f183d9112b94eca3de"
+
 [vars]
 GITHUB_REPO = "yuangunn/ktx-srt-watcher"
 EVENT_TYPE = "cron-tick"

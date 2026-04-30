@@ -71,11 +71,14 @@ jobs:
             git add state.json
             if git diff --staged --quiet; then
               echo "state.json already reflects our run on attempt $attempt — nothing to commit"
+              # Mirror to CF KV anyway; PWA reads from there preferentially
+              python -m worker.state push-mirror state.json || true
               exit 0
             fi
             git commit -m "chore(state): update [skip ci]"
             if git push; then
               echo "push succeeded on attempt $attempt"
+              python -m worker.state push-mirror state.json || true
               exit 0
             fi
             echo "push attempt $attempt failed (likely concurrent push), retrying..."

@@ -54,6 +54,39 @@ export default {
         return text(`error: ${e.message}\n`, 500);
       }
     }
+    // Public GET: PWA reads the latest state mirror.  Returns 404 if no
+    // state has been pushed yet, in which case the PWA falls back to
+    // GitHub Contents API.  No auth — the data is the user's own
+    // notification history, not secrets.
+    if (url.pathname === "/state" && request.method === "GET") {
+      const stored = await env.STATE.get("current");
+      if (!stored) return text("no state mirror yet\n", 404);
+      return new Response(stored, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+    // Auth-required PUT: GHA watcher writes the mirror after every run.
+    // Body is the raw state.json contents; we store as-is.
+    if (url.pathname === "/state" && request.method === "PUT") {
+      const auth = request.headers.get("authorization") || "";
+      if (auth !== `Bearer ${env.REMINDER_TOKEN}`) {
+        return text("unauthorized\n", 401);
+      }
+      const body = await request.text();
+      // Validate it parses as JSON before storing
+      try {
+        JSON.parse(body);
+      } catch (e) {
+        return text(`invalid JSON: ${e.message}\n`, 400);
+      }
+      await env.STATE.put("current", body);
+      return text("stored\n", 202);
+    }
     return text("ktx-srt-watcher cron bridge\n");
   },
 };
