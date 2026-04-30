@@ -215,7 +215,8 @@ def _reservation():
         provider="korail",
         reservation_id="ABC123",
         train_no="045",
-        expires_at="2026-04-30T19:55:00Z",
+        # KST-tagged ISO so deadline display matches Korail's actual hold
+        expires_at="2026-04-30T19:55:00+09:00",
     )
 
 
@@ -257,3 +258,18 @@ class TestNotifyReservation:
         notifier.notify_reservation_failure(_watch(), _train(), "로그인 실패", session=session)
         assert len(session.calls) == 1
         assert "로그인 실패" in session.calls[0]["json"]["text"]
+
+
+class TestFmtDeadline:
+    def test_utc_iso_converts_to_kst_display(self):
+        # UTC 11:56 → KST 20:56
+        assert notifier._fmt_deadline("2026-04-30T11:56:00Z") == "20:56"
+
+    def test_kst_iso_renders_kst_directly(self):
+        assert notifier._fmt_deadline("2026-04-30T20:56:00+09:00") == "20:56"
+
+    def test_none_returns_dash(self):
+        assert notifier._fmt_deadline(None) == "—"
+
+    def test_malformed_iso_falls_back_to_substring(self):
+        assert notifier._fmt_deadline("2026-04-30T20:56:00") in ("20:56", "2026-04-30T20:56:00")

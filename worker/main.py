@@ -157,9 +157,21 @@ def _process_watch(
         target = new_trains[0]
         try:
             reservation = provider.reserve(target, watch.passengers)
-            log.info("[%s] watch %s: reserved %s (id=%s)", provider.name, watch.id, target.train_no, reservation.reservation_id)
-            if notify_reserve_success_fn is not None:
-                notify_reserve_success_fn(watch, target, reservation)
+            if reservation.already_existed:
+                # Same train was already reserved (typically a previous run
+                # reserved it but state.json commit didn't propagate before
+                # this run started). Don't spam another success notification.
+                log.info(
+                    "[%s] watch %s: train %s already reserved — skipping notify",
+                    provider.name, watch.id, target.train_no,
+                )
+            else:
+                log.info(
+                    "[%s] watch %s: reserved %s (id=%s)",
+                    provider.name, watch.id, target.train_no, reservation.reservation_id,
+                )
+                if notify_reserve_success_fn is not None:
+                    notify_reserve_success_fn(watch, target, reservation)
         except Exception as e:
             log.exception("[%s] watch %s: reserve failed for train %s: %s", provider.name, watch.id, target.train_no, e)
             if notify_reserve_failure_fn is not None:

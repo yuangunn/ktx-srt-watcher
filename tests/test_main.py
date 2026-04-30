@@ -477,6 +477,62 @@ class TestPollInterval:
         )
         assert len(korail.searches) == 1
 
+
+class TestAlreadyExistedReservation:
+    def test_already_existed_skips_success_notify(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        existing = Reservation(
+            provider="korail",
+            reservation_id="(기존)",
+            train_no="045",
+            already_existed=True,
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=existing,
+        )
+        success_calls: list = []
+        failure_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            notify_reserve_failure_fn=lambda *a: failure_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert success_calls == []
+        assert failure_calls == []
+        assert len(korail.reserve_calls) == 1
+
+    def test_normal_reservation_still_notifies_success(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        fresh = Reservation(
+            provider="korail",
+            reservation_id="ABC123",
+            train_no="045",
+            expires_at="2026-04-30T20:56:00+09:00",
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=fresh,
+        )
+        success_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(success_calls) == 1
+
     def test_cron_with_notify_empty_setting_skips_summary_when_seats_found(self):
         cfg = {
             "version": 1,

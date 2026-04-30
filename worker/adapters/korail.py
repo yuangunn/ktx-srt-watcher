@@ -97,18 +97,58 @@ class KorailProvider:
         except SoldOutError as e:
             raise RuntimeError(f"좌석 매진: {e}") from e
         except KorailError as e:
+            if _is_duplicate_reservation_error(e):
+                # User already has a hold on this exact train (typically
+                # because we reserved it in a previous run but state.json
+                # didn't get committed in time, so this run thought the
+                # train was new again). Treat as silent success — main.py
+                # will suppress the success notification.
+                return Reservation(
+                    provider="korail",
+                    reservation_id="(기존)",
+                    train_no=train.train_no,
+                    expires_at=None,
+                    booking_url=LETSKORAIL_BOOKING,
+                    already_existed=True,
+                )
             raise RuntimeError(f"코레일 예약 오류: {e}") from e
 
-        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
         return Reservation(
             provider="korail",
             reservation_id=str(getattr(rsv, "rsv_id", "") or rsv),
             train_no=train.train_no,
-            expires_at=expires_at,
+            expires_at=_korail_deadline_iso(rsv),
             booking_url=LETSKORAIL_BOOKING,
         )
+
+
+def _korail_deadline_iso(rsv) -> str:
+    """Build an ISO 8601 KST timestamp from korail2's buy_limit_* fields.
+
+    korail2.Reservation exposes `buy_limit_date` (YYYYMMDD) and
+    `buy_limit_time` (HHMMSS), both already in KST per Korail's response.
+    Fallback to "now + 20 min UTC" if those fields are missing or malformed
+    (older korail2 versions, or unexpected response shape).
+    """
+    buy_dt = getattr(rsv, "buy_limit_date", None)
+    buy_tm = getattr(rsv, "buy_limit_time", None)
+    if isinstance(buy_dt, str) and isinstance(buy_tm, str) and len(buy_dt) == 8 and len(buy_tm) >= 4:
+        try:
+            return (
+                f"{buy_dt[0:4]}-{buy_dt[4:6]}-{buy_dt[6:8]}T"
+                f"{buy_tm[0:2]}:{buy_tm[2:4]}:{buy_tm[4:6] if len(buy_tm) >= 6 else '00'}"
+                f"+09:00"
+            )
+        except (IndexError, ValueError):
+            pass
+    return (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _is_duplicate_reservation_error(e: Exception) -> bool:
+    msg = str(e)
+    return "WRR800029" in msg or "동일한 예약" in msg
 
 
 def _reserve_option(seat_class: str) -> "ReserveOption":

@@ -93,3 +93,8 @@ class Reservation(BaseModel):
     train_no: str
     expires_at: str | None = None
     booking_url: str = ""
+    # True when the provider reported "you already have this reservation"
+    # rather than creating a new hold. main.py uses this to suppress the
+    # success notification (we already sent one when the original reserve
+    # landed) without treating the run as a failure.
+    already_existed: bool = False

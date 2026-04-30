@@ -82,18 +82,54 @@ class SRTProvider:
         try:
             rsv = self._client.reserve(raw, passengers=psgr, special_seat=seat_type)
         except (SRTResponseError, SRTNotLoggedInError) as e:
+            if _is_duplicate_reservation_error(e):
+                return Reservation(
+                    provider="srt",
+                    reservation_id="(기존)",
+                    train_no=train.train_no,
+                    expires_at=None,
+                    booking_url=SRAIL_BOOKING,
+                    already_existed=True,
+                )
             raise RuntimeError(f"SRT 예약 오류: {e}") from e
 
-        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
         return Reservation(
             provider="srt",
             reservation_id=str(getattr(rsv, "reservation_number", "") or rsv),
             train_no=train.train_no,
-            expires_at=expires_at,
+            expires_at=_srt_deadline_iso(rsv),
             booking_url=SRAIL_BOOKING,
         )
+
+
+def _srt_deadline_iso(rsv) -> str:
+    """Build an ISO 8601 KST timestamp from SRTReservation's payment_*.
+
+    SRTReservation exposes `payment_date` (YYYYMMDD) and `payment_time`
+    (HHMMSS), both already in KST.  Fallback to "now + 20 min UTC" when
+    fields are missing or malformed.
+    """
+    pay_dt = getattr(rsv, "payment_date", None)
+    pay_tm = getattr(rsv, "payment_time", None)
+    if isinstance(pay_dt, str) and isinstance(pay_tm, str) and len(pay_dt) == 8 and len(pay_tm) >= 4:
+        try:
+            return (
+                f"{pay_dt[0:4]}-{pay_dt[4:6]}-{pay_dt[6:8]}T"
+                f"{pay_tm[0:2]}:{pay_tm[2:4]}:{pay_tm[4:6] if len(pay_tm) >= 6 else '00'}"
+                f"+09:00"
+            )
+        except (IndexError, ValueError):
+            pass
+    return (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _is_duplicate_reservation_error(e: Exception) -> bool:
+    msg = str(e)
+    # SRT uses different error codes; match the substring that's stable
+    # across both libraries' error wording.
+    return "동일한 예약" in msg or "이미 예약" in msg or "duplicate" in msg.lower()
 
 
 def _seat_type(seat_class: str) -> "SeatType":

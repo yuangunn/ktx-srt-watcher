@@ -124,13 +124,31 @@ def notify_reservation_failure(
 
 
 def _fmt_deadline(iso: str | None) -> str:
+    """Render a timezone-aware ISO timestamp as KST HH:MM (UTC+9).
+
+    Korail / SRT return KST-tagged timestamps (e.g. "...+09:00"); fallbacks
+    use UTC ("...Z").  We normalise to KST so the user sees the same time
+    they'd see in 코레일톡 / SR 앱.
+    """
     if not iso:
         return "—"
-    # "2026-04-30T19:55:00Z" → "19:55"
+    from datetime import datetime, timedelta, timezone
+    kst_tz = timezone(timedelta(hours=9))
     try:
-        return iso.split("T")[1][:5]
-    except (IndexError, AttributeError):
-        return iso
+        normalised = iso.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalised)
+        if dt.tzinfo is None:
+            # Naive timestamp: our adapters always produce timezone-aware
+            # ISO, so this only happens for manually edited / legacy data —
+            # default to KST since that's what the rest of the system uses.
+            dt = dt.replace(tzinfo=kst_tz)
+        kst = dt.astimezone(kst_tz)
+        return kst.strftime("%H:%M")
+    except (ValueError, TypeError, AttributeError):
+        try:
+            return iso.split("T")[1][:5]
+        except (IndexError, AttributeError):
+            return iso
 
 
 def _require_env(name: str) -> str:
