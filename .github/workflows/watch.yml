@@ -1,0 +1,50 @@
+name: ticket-watch
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # 평시. 명절 임박 시 */5 로 변경
+  workflow_dispatch:          # 수동 실행 버튼
+  push:
+    paths:
+      - 'config.json'         # config 변경 즉시 1회 실행
+
+permissions:
+  contents: write             # state.json 커밋용
+
+concurrency:
+  group: ticket-watch
+  cancel-in-progress: false   # 중첩 실행 방지, 진행 중인 건 끝까지
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8        # cron 간격보다 짧게
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run watcher
+        env:
+          KORAIL_ID: ${{ secrets.KORAIL_ID }}
+          KORAIL_PW: ${{ secrets.KORAIL_PW }}
+          SRT_ID: ${{ secrets.SRT_ID }}
+          SRT_PW: ${{ secrets.SRT_PW }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m worker.main
+
+      - name: Commit state
+        run: |
+          git config user.name "ticket-watcher-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet && exit 0
+          git commit -m "chore(state): update [skip ci]"
+          git push

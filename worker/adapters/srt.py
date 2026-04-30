@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from SRT import SRT, Adult, Child, Senior, SRTNotLoggedInError, SRTResponseError
+
+from ..models import Passengers, Reservation, Train, Watch
+
+SRAIL_BOOKING = "https://etk.srail.kr"
+
+
+class SRTProvider:
+    name = "srt"
+
+    def __init__(self) -> None:
+        self._client: SRT | None = None
+
+    def login(self, user_id: str, password: str) -> None:
+        self._client = SRT(user_id, password, auto_login=False)
+        self._client.login(user_id, password)
+
+    def search(self, watch: Watch) -> list[Train]:
+        if self._client is None:
+            raise RuntimeError("SRTProvider.search called before login")
+
+        date_str = watch.date.replace("-", "")
+        time_str = watch.time_min.replace(":", "") + "00"
+
+        try:
+            raws = self._client.search_train(
+                dep=watch.from_,
+                arr=watch.to,
+                date=date_str,
+                time=time_str,
+                available_only=True,
+            )
+        except (SRTResponseError, SRTNotLoggedInError):
+            return []
+
+        result: list[Train] = []
+        for r in raws:
+            dep_time = _fmt_time(r.dep_time)
+            if "SRT" not in watch.train_types and r.train_name not in watch.train_types:
+                continue
+            if not (watch.time_min <= dep_time <= watch.time_max):
+                continue
+            seats_g = 1 if r.general_seat_available() else 0
+            seats_s = 1 if r.special_seat_available() else 0
+            if seats_g + seats_s == 0:
+                continue
+            result.append(
+                Train(
+                    provider="srt",
+                    train_no=str(r.train_number),
+                    train_type=r.train_name,
+                    dep_station=r.dep_station_name,
+                    arr_station=r.arr_station_name,
+                    date=watch.date,
+                    dep_time=dep_time,
+                    arr_time=_fmt_time(r.arr_time),
+                    seats_general=seats_g,
+                    seats_special=seats_s,
+                    raw_id=f"{watch.date}-{r.train_number}-{dep_time}",
+                    booking_url=SRAIL_BOOKING,
+                )
+            )
+        return result
+
+    def reserve(self, train: Train) -> Reservation:
+        raise NotImplementedError("auto_reserve is Phase 3 — not implemented yet")
+
+
+def _build_passengers(p: Passengers) -> list:
+    out: list = []
+    if p.adult > 0:
+        out.append(Adult(p.adult))
+    if p.child > 0:
+        out.append(Child(p.child))
+    if p.senior > 0:
+        out.append(Senior(p.senior))
+    if not out:
+        out.append(Adult(1))
+    return out
+
+
+def _fmt_time(s: str | int) -> str:
+    padded = str(s).zfill(6)
+    return f"{padded[0:2]}:{padded[2:4]}"
