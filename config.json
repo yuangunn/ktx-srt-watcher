@@ -64,6 +64,7 @@
   ],
   "settings": {
     "notify_empty_on_cron": true,
-    "poll_interval_min": 30
+    "poll_interval_min": 30,
+    "allow_waiting_list": true
   }
 }
