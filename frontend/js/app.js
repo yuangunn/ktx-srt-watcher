@@ -62,6 +62,18 @@ class GitHub {
     if (!res.ok) throw new Error(`auth check → ${res.status}`);
     return res.json();
   }
+  async dispatchWorkflow(workflowFile, ref = 'main') {
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repo}/actions/workflows/${workflowFile}/dispatches`,
+      {
+        method: 'POST',
+        headers: { ...this._headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref }),
+      },
+    );
+    if (res.status === 204) return;
+    throw new Error(`dispatch ${workflowFile} → ${res.status} ${await res.text()}`);
+  }
 }
 
 function encodeUtf8(s) { return new TextEncoder().encode(s).reduce((a, b) => a + String.fromCharCode(b), ''); }
@@ -187,6 +199,7 @@ class App {
 
     this._wireFab();
     this._wireSheet();
+    this._wireCheckNow();
     await this._loadAll();
   }
 
@@ -284,6 +297,48 @@ class App {
 
   _wireFab() {
     $('#fab-add').addEventListener('click', () => this._openSheet());
+  }
+  _wireCheckNow() {
+    $('#check-now').addEventListener('click', () => this._checkNow());
+  }
+  async _checkNow() {
+    const btn = $('#check-now');
+    if (btn.disabled) return;
+    const startedAt = Date.now();
+    btn.disabled = true;
+    btn.dataset.state = 'running';
+    $('#poll-pulse').dataset.state = 'active';
+    $('#last-run').textContent = '실행 중…';
+    try {
+      await this.gh.dispatchWorkflow('watch.yml');
+      // workflow takes ~30–50s — poll state.json for last_run advancement
+      let detected = false;
+      for (let i = 0; i < 14 && !detected; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const fresh = await this.gh.getFile('state.json');
+          if (fresh?.content) {
+            const ns = JSON.parse(fresh.content);
+            if (ns.last_run && new Date(ns.last_run).getTime() >= startedAt - 5000) {
+              this.state = ns;
+              detected = true;
+            }
+          }
+        } catch { /* keep polling */ }
+      }
+      if (!detected) this._toast('확인 요청은 보냈는데 결과 반영이 느립니다 — 잠시 후 새로고침해 주세요.');
+    } catch (e) {
+      if (String(e.message).includes('403')) {
+        this._toast('PAT에 Actions: Write 권한이 필요합니다. 설정에서 토큰을 다시 발급해 주세요.');
+      } else {
+        this._toast(`확인 실패 — ${e.message}`);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.dataset.state = 'idle';
+      this._renderHeader();
+      this._renderWatches();
+    }
   }
   _wireSheet() {
     const sheet = $('#sheet');

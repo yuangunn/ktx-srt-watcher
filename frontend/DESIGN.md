@@ -164,6 +164,15 @@ components:
     backgroundColor: "#B8422E"
   poll-pulse-idle:
     backgroundColor: "{colors.outline-variant}"
+  header-status-button:
+    backgroundColor: transparent
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.full}"
+    padding: 7px 14px 7px 12px
+    border: "1px solid {colors.outline-variant}"
+  header-status-button-running:
+    backgroundColor: rgba(184, 66, 46, 0.06)
+    border: "1px solid #B8422E"
   watch-card:
     backgroundColor: "{colors.surface-container}"
     textColor: "{colors.on-surface}"
@@ -366,7 +375,12 @@ Inactive watches use `watch-card-inactive` (one tier dimmer surface) and drop pr
 
 ### Header
 
-Site-name `발권창구` on the left in `display-sm`. On the right, a 6px circle that pulses in `poll-pulse-active` `#B8422E` when polling is recent (< 15 min based on `state.json::last_run`), or holds in `poll-pulse-idle` (`outline-variant`) otherwise. Pulse animation: `1s ease-in-out infinite alternate` between alpha 0.4 and 1.0.
+Site-name `발권창구` on the left in `display-sm`. On the right, the **status button** (`header-status-button`) — an outlined pill containing the pulse dot and the last-run timestamp. The pill itself is the affordance for an on-demand poll: tapping it dispatches a `workflow_dispatch` event to the GitHub Actions worker.
+
+States:
+- **idle**: pulse `idle` (gray) when last_run > 15min old, `active` (ember) when recent. Border `outline-variant`. Label is the relative timestamp (`5분 전`).
+- **running**: border switches to `#B8422E` (ember), background fills `rgba(184,66,46,0.06)`, pulse stays `active`, label reads `실행 중…`. Button is `disabled` for the duration.
+- **disabled**: only when an in-flight dispatch is awaiting state advancement (~30–50s).
 
 Below the title, a hairline `divider-dotted` separates the header from the list — a 1px dashed line running the full content width.
 
