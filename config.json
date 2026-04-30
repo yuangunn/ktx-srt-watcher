@@ -2,24 +2,6 @@
   "version": 1,
   "watches": [
     {
-      "id": "suseo-dongdaegu-20260515-pm",
-      "provider": "srt",
-      "from": "수서",
-      "to": "동대구",
-      "date": "2026-05-15",
-      "time_min": "18:00",
-      "time_max": "22:00",
-      "train_types": [
-        "SRT"
-      ],
-      "passengers": {
-        "adult": 1
-      },
-      "seat_class": "general",
-      "auto_reserve": false,
-      "active": true
-    },
-    {
       "id": "수원-부산-20260523-vgqv",
       "provider": "korail",
       "from": "수원",
