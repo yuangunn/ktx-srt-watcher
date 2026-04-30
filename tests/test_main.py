@@ -348,6 +348,40 @@ class TestManualTriggerSummary:
         )
         assert len(summary_calls) == 1
 
+    def test_repository_dispatch_treated_like_schedule_with_setting(self):
+        cfg = {
+            "version": 1,
+            "settings": {"notify_empty_on_cron": True},
+            "watches": [_watch_dict(id="w")],
+        }
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(summary_calls) == 1
+
+    def test_repository_dispatch_no_summary_without_setting(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert summary_calls == []
+
     def test_cron_with_notify_empty_setting_skips_summary_when_seats_found(self):
         cfg = {
             "version": 1,

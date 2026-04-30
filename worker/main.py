@@ -100,10 +100,9 @@ def run_watches(
 
     settings = config.get("settings") or {}
     notify_empty_on_cron = bool(settings.get("notify_empty_on_cron", False))
-    should_summarize = (
-        event_name == "workflow_dispatch"
-        or (notify_empty_on_cron and event_name == "schedule")
-    )
+    is_manual = event_name == "workflow_dispatch"
+    is_automated = event_name in ("schedule", "repository_dispatch")
+    should_summarize = is_manual or (notify_empty_on_cron and is_automated)
     if should_summarize and new_train_total == 0 and notify_summary_fn is not None:
         try:
             notify_summary_fn(active)

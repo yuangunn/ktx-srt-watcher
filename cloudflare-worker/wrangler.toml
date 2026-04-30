@@ -1,0 +1,20 @@
+name = "ktx-srt-watcher-cron"
+main = "src/index.js"
+compatibility_date = "2026-04-30"
+
+# Fires the watcher every 5 minutes.  Adjust as needed; remember Korail/SR
+# anti-bot protection — keep above ~3 min to be safe.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+GITHUB_REPO = "yuangunn/ktx-srt-watcher"
+EVENT_TYPE = "cron-tick"
+# GITHUB_TOKEN is set via:  npx wrangler secret put GITHUB_TOKEN
+# Required scopes (fine-grained PAT, only this repo):
+#   - Contents: Read and write
+#   - Actions:  Read and write
+
+[observability]
+enabled = true
+head_sampling_rate = 1

@@ -1,0 +1,15 @@
+{
+  "name": "ktx-srt-watcher-cron",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker cron bridge that wakes the GHA watcher reliably",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "secret:token": "wrangler secret put GITHUB_TOKEN"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

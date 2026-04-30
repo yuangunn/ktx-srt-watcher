@@ -405,15 +405,19 @@ class App {
 
   async _loadAll() {
     try {
-      const [{ sha, content }, stateFile, workflowFile] = await Promise.all([
+      const [{ sha, content }, stateFile, wranglerFile, workflowFile] = await Promise.all([
         this.gh.getFile('config.json'),
         this.gh.getFile('state.json').catch(() => ({ sha: null, content: null })),
+        this.gh.getFile('cloudflare-worker/wrangler.toml').catch(() => ({ sha: null, content: null })),
         this.gh.getFile('.github/workflows/watch.yml').catch(() => ({ sha: null, content: null })),
       ]);
       this.configSha = sha;
       this.config = content ? JSON.parse(content) : emptyConfig();
       this.state = stateFile?.content ? JSON.parse(stateFile.content) : null;
-      this._parseCronFromWorkflow(workflowFile?.content);
+      // Prefer the CF Worker cron over the GHA fallback when present.
+      if (!this._parseCronFromWrangler(wranglerFile?.content)) {
+        this._parseCronFromWorkflow(workflowFile?.content);
+      }
     } catch (e) {
       if (this._isAuthError(e)) {
         this._handleAuthFailure();
@@ -428,12 +432,25 @@ class App {
     this._loadRuns();
   }
 
+  _parseCronFromWrangler(tomlText) {
+    if (!tomlText) return false;
+    const m = tomlText.match(/crons\s*=\s*\[\s*"([^"]+)"/);
+    if (!m) return false;
+    const parsed = parseSimpleCron(m[1]);
+    if (!parsed) return false;
+    this.cronIntervalMin = parsed.intervalMin;
+    this.cronSource = 'cf';
+    return true;
+  }
   _parseCronFromWorkflow(yamlText) {
     if (!yamlText) return;
     const m = yamlText.match(/cron:\s*['"]([^'"]+)['"]/);
     if (!m) return;
     const parsed = parseSimpleCron(m[1]);
-    if (parsed) this.cronIntervalMin = parsed.intervalMin;
+    if (parsed) {
+      this.cronIntervalMin = parsed.intervalMin;
+      this.cronSource = 'gha';
+    }
   }
 
   _isAuthError(e) {
@@ -522,10 +539,10 @@ class App {
     const tick = () => {
       const next = nextTickEpoch(this.cronIntervalMin);
       const remaining = next - Date.now();
-      intervalEl.textContent = `매 ${this.cronIntervalMin}분 자동`;
+      const label = this.cronSource === 'cf' ? 'CF · 매' : '매';
+      intervalEl.textContent = `${label} ${this.cronIntervalMin}분 자동`;
       countdownEl.textContent = fmtCountdown(remaining);
       if (remaining <= 0) {
-        // GitHub cron has up to ~5min lag; check back in 60s for refreshed runs
         setTimeout(() => this._loadRuns(), 60000);
       }
     };
