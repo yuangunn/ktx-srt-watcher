@@ -2,10 +2,14 @@ name: ticket-watch
 
 on:
   schedule:
-    # GHA throttles private/free-tier scheduled workflows to ~30–60min.
-    # The primary cron is the Cloudflare Worker bridge (cloudflare-worker/);
-    # this schedule is a redundant safety net.
-    - cron: '*/30 * * * *'
+    # CF Worker bridge (cloudflare-worker/) is the primary cron at the
+    # rate set in wrangler.toml. This schedule is just a low-frequency
+    # fallback so the watcher still ticks if CF Worker is broken
+    # (PAT expired, account suspended, etc.). Each GHA run bills at
+    # least 1 min regardless of duration, so we keep this sparse —
+    # 4 runs/day fits comfortably under the 2,000 min/month free tier
+    # alongside the CF-driven runs.
+    - cron: '0 */6 * * *'
   workflow_dispatch:                   # PWA "지금 확인" / 수동 실행
   repository_dispatch:
     types: [cron-tick]                 # CF Worker 정확한 cron

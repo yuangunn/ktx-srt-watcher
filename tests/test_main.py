@@ -477,6 +477,48 @@ class TestPollInterval:
         )
         assert len(korail.searches) == 1
 
+    def test_runs_at_next_bucket_even_when_drift_under_interval(self):
+        # Regression: under the old elapsed-based check, a run that started
+        # at 11:00:25 (typical GHA setup delay) would cause the 11:30:00
+        # tick to measure 29:35 elapsed and skip. Bucket-based check
+        # treats these as different 30-min windows, so it runs.
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 30},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:25Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:30:00Z",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.searches) == 1
+
+    def test_skips_within_same_bucket(self):
+        # Regression sibling: 11:00:00 and 11:29:59 are the same 30-min
+        # bucket, so the second tick still skips.
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 30},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:29:59Z",
+            event_name="repository_dispatch",
+        )
+        assert korail.searches == []
+
 
 class TestAlreadyExistedReservation:
     def test_already_existed_skips_success_notify(self):

@@ -77,11 +77,20 @@ def run_watches(
         try:
             last_dt = datetime.fromisoformat(state["last_run"].replace("Z", "+00:00"))
             now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
-            elapsed_sec = (now_dt - last_dt).total_seconds()
-            if elapsed_sec < poll_interval_min * 60:
+            # Bucket-based throttle: divide epoch time into N-min windows;
+            # skip if the previous run fell into the same window we're in
+            # right now.  This avoids the elapsed-based drift problem where
+            # a run at HH:00:25 makes the HH:30:00 tick measure 29:35
+            # elapsed and skip — losing the cadence — even though it's a
+            # different cron boundary.
+            bucket_size = poll_interval_min * 60
+            last_bucket = int(last_dt.timestamp()) // bucket_size
+            now_bucket = int(now_dt.timestamp()) // bucket_size
+            if last_bucket == now_bucket:
+                elapsed_sec = (now_dt - last_dt).total_seconds()
                 log.info(
-                    "skip run: %.0fs since last_run < %dm interval (%s)",
-                    elapsed_sec, poll_interval_min, event_name,
+                    "skip run: same %dm bucket as last_run (elapsed=%.0fs, %s)",
+                    poll_interval_min, elapsed_sec, event_name,
                 )
                 return
         except (ValueError, TypeError):
