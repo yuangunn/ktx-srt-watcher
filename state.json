@@ -1,4 +1,10 @@
 {
-  "last_run": null,
-  "watches": {}
+  "last_run": "2026-04-30T07:19:09Z",
+  "watches": {
+    "seoul-busan-20260515-am": {
+      "last_check": "2026-04-30T07:19:09Z",
+      "notified_train_ids": [],
+      "watch_date": "2026-05-15"
+    }
+  }
 }
