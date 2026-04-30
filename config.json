@@ -40,6 +40,26 @@
       "seat_class": "any",
       "auto_reserve": true,
       "active": true
+    },
+    {
+      "id": "부산-동탄-20260525-frfv",
+      "provider": "srt",
+      "from": "부산",
+      "to": "동탄",
+      "date": "2026-05-25",
+      "time_min": "16:00",
+      "time_max": "20:00",
+      "train_types": [
+        "SRT"
+      ],
+      "passengers": {
+        "adult": 2,
+        "child": 0,
+        "senior": 0
+      },
+      "seat_class": "any",
+      "auto_reserve": true,
+      "active": true
     }
   ],
   "settings": {
