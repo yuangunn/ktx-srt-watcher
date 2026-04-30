@@ -19,16 +19,25 @@ def format_message(watch: Watch, trains: list[Train]) -> str:
         return header
 
     lines = [header, ""]
+    booking_urls: set[str] = set()
     for t in trains:
         seat_parts: list[str] = []
         if t.seats_general > 0:
-            seat_parts.append(f"일반 {t.seats_general}석")
+            seat_parts.append("일반")
         if t.seats_special > 0:
-            seat_parts.append(f"특실 {t.seats_special}석")
-        seats = " / ".join(seat_parts) if seat_parts else "잔여석 미상"
-        lines.append(f"{t.dep_time} 발 {t.train_type} {t.train_no} / {seats}")
+            seat_parts.append("특실")
+        seats = " / ".join(seat_parts) if seat_parts else "잔여 정보 없음"
+        lines.append(f"{t.dep_time} 발 {t.train_type} {t.train_no} · {seats}")
         if t.booking_url:
-            lines.append(f"예매: {t.booking_url}")
+            booking_urls.add(t.booking_url)
+
+    if booking_urls:
+        lines.append("")
+        for url in sorted(booking_urls):
+            lines.append(f"예매: {url}")
+
+    lines.append("")
+    lines.append("※ 정확한 잔여석 수는 코레일톡/SR 앱에서 확인하세요.")
     return "\n".join(lines)
 
 

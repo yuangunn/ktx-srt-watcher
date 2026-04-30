@@ -68,24 +68,41 @@ class TestFormatMessage:
         assert "🚄" in msg
 
     def test_includes_train_details(self):
-        train = _train(train_no="045", dep_time="09:35", train_type="KTX", seats_general=2)
+        train = _train(train_no="045", dep_time="09:35", train_type="KTX", seats_general=1)
         msg = notifier.format_message(_watch(), [train])
         assert "09:35" in msg
         assert "KTX" in msg
         assert "045" in msg
-        assert "일반 2석" in msg
+        assert "일반" in msg
 
     def test_special_seats_only(self):
-        train = _train(seats_general=0, seats_special=3)
+        train = _train(seats_general=0, seats_special=1)
         msg = notifier.format_message(_watch(), [train])
-        assert "특실 3석" in msg
-        assert "일반" not in msg
+        assert "특실" in msg
+        # 일반 (any class) shouldn't appear in the seat line for this train
+        seat_line = next(l for l in msg.split("\n") if "발" in l and train.train_no in l)
+        assert "일반" not in seat_line
 
     def test_both_seat_classes(self):
-        train = _train(seats_general=2, seats_special=1)
+        train = _train(seats_general=1, seats_special=1)
         msg = notifier.format_message(_watch(), [train])
-        assert "일반 2석" in msg
-        assert "특실 1석" in msg
+        assert "일반" in msg
+        assert "특실" in msg
+
+    def test_count_disclaimer_present(self):
+        train = _train()
+        msg = notifier.format_message(_watch(), [train])
+        assert "정확한 잔여석" in msg
+        assert "앱에서 확인" in msg
+
+    def test_no_fake_seat_count_in_message(self):
+        # 옛 포맷("일반 N석")이 다시 들어오지 않게 회귀 테스트
+        train = _train(seats_general=1, seats_special=1)
+        msg = notifier.format_message(_watch(), [train])
+        # "1석" / "2석" 등 가짜 카운트 금지
+        import re
+        assert not re.search(r"일반 \d+석", msg)
+        assert not re.search(r"특실 \d+석", msg)
 
     def test_includes_booking_url(self):
         train = _train(booking_url="https://example.com/reserve/x")
