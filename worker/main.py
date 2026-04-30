@@ -14,7 +14,7 @@ from .adapters.base import Provider
 from .adapters.korail import KorailProvider
 from .adapters.srt import SRTProvider
 from .matcher import find_new_trains
-from .models import Train, Watch
+from .models import Reservation, Train, Watch
 
 log = logging.getLogger("ticket_watcher")
 
@@ -23,6 +23,8 @@ STATE_PATH = Path("state.json")
 
 NotifyFn = Callable[[Watch, list[Train]], None]
 SummaryFn = Callable[[list[Watch]], None]
+ReserveSuccessFn = Callable[[Watch, Train, "Reservation"], None]
+ReserveFailureFn = Callable[[Watch, Train, str], None]
 
 
 def main() -> int:
@@ -44,6 +46,8 @@ def main() -> int:
         creds=creds,
         notify_fn=notifier.notify,
         notify_summary_fn=notifier.notify_summary,
+        notify_reserve_success_fn=notifier.notify_reservation_success,
+        notify_reserve_failure_fn=notifier.notify_reservation_failure,
         now_iso=now_iso,
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
@@ -61,6 +65,8 @@ def run_watches(
     notify_fn: NotifyFn,
     now_iso: str,
     notify_summary_fn: SummaryFn | None = None,
+    notify_reserve_success_fn: ReserveSuccessFn | None = None,
+    notify_reserve_failure_fn: ReserveFailureFn | None = None,
     event_name: str | None = None,
 ) -> None:
     state_mod.mark_run(state, now_iso)
@@ -84,7 +90,11 @@ def run_watches(
             continue
         for watch in watches:
             try:
-                new_train_total += _process_watch(watch, provider, state, notify_fn, now_iso)
+                new_train_total += _process_watch(
+                    watch, provider, state, notify_fn, now_iso,
+                    notify_reserve_success_fn=notify_reserve_success_fn,
+                    notify_reserve_failure_fn=notify_reserve_failure_fn,
+                )
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
 
@@ -107,6 +117,9 @@ def _process_watch(
     state: dict[str, Any],
     notify_fn: NotifyFn,
     now_iso: str,
+    *,
+    notify_reserve_success_fn: ReserveSuccessFn | None = None,
+    notify_reserve_failure_fn: ReserveFailureFn | None = None,
 ) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
@@ -122,6 +135,22 @@ def _process_watch(
     log.info("[%s] watch %s: %d new seat(s)", provider.name, watch.id, len(new_trains))
     notify_fn(watch, new_trains)
     state_mod.add_notified_ids(state, watch.id, [t.raw_id for t in new_trains])
+
+    if watch.auto_reserve:
+        target = new_trains[0]
+        try:
+            reservation = provider.reserve(target, watch.passengers)
+            log.info("[%s] watch %s: reserved %s (id=%s)", provider.name, watch.id, target.train_no, reservation.reservation_id)
+            if notify_reserve_success_fn is not None:
+                notify_reserve_success_fn(watch, target, reservation)
+        except Exception as e:
+            log.exception("[%s] watch %s: reserve failed for train %s: %s", provider.name, watch.id, target.train_no, e)
+            if notify_reserve_failure_fn is not None:
+                try:
+                    notify_reserve_failure_fn(watch, target, str(e))
+                except Exception as nfx:
+                    log.exception("reserve-failure notify itself failed: %s", nfx)
+
     return len(new_trains)
 
 

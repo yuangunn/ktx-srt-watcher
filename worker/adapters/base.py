@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ..models import Reservation, Train, Watch
+from ..models import Passengers, Reservation, Train, Watch
 
 
 @runtime_checkable
@@ -13,4 +13,4 @@ class Provider(Protocol):
 
     def search(self, watch: Watch) -> list[Train]: ...
 
-    def reserve(self, train: Train) -> Reservation: ...
+    def reserve(self, train: Train, passengers: Passengers) -> Reservation: ...

@@ -190,3 +190,53 @@ class TestNotifySummary:
         session = FakeSession()
         notifier.notify_summary([], session=session)
         assert len(session.calls) == 1
+
+
+def _reservation():
+    from worker.models import Reservation
+    return Reservation(
+        provider="korail",
+        reservation_id="ABC123",
+        train_no="045",
+        expires_at="2026-04-30T19:55:00Z",
+    )
+
+
+class TestFormatReservation:
+    def test_success_includes_route_train_and_deadline(self):
+        msg = notifier.format_reservation_success(_watch(), _train(), _reservation())
+        assert "✅" in msg
+        assert "임시예약" in msg
+        assert "ABC123" in msg
+        assert "045" in msg
+        assert "서울→부산" in msg
+        assert "19:55" in msg
+        assert "결제 마감" in msg or "결제" in msg
+
+    def test_success_warns_about_manual_payment(self):
+        msg = notifier.format_reservation_success(_watch(), _train(), _reservation())
+        assert "결제는 코레일톡" in msg or "직접 결제" in msg or "앱에서" in msg
+
+    def test_failure_includes_route_train_and_reason(self):
+        msg = notifier.format_reservation_failure(_watch(), _train(), "좌석 매진")
+        assert "❌" in msg or "실패" in msg
+        assert "045" in msg
+        assert "좌석 매진" in msg
+
+
+class TestNotifyReservation:
+    def test_success_sends_telegram(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "T")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "C")
+        session = FakeSession()
+        notifier.notify_reservation_success(_watch(), _train(), _reservation(), session=session)
+        assert len(session.calls) == 1
+        assert "ABC123" in session.calls[0]["json"]["text"]
+
+    def test_failure_sends_telegram(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "T")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "C")
+        session = FakeSession()
+        notifier.notify_reservation_failure(_watch(), _train(), "로그인 실패", session=session)
+        assert len(session.calls) == 1
+        assert "로그인 실패" in session.calls[0]["json"]["text"]

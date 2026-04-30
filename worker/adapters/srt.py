@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from SRT import SRT, Adult, Child, Senior, SRTNotLoggedInError, SRTResponseError
+from datetime import datetime, timedelta, timezone
+
+from SRT import SRT, Adult, Child, SeatType, Senior, SRTNotLoggedInError, SRTResponseError
 
 from ..models import Passengers, Reservation, Train, Watch
 
 SRAIL_BOOKING = "https://etk.srail.kr"
+RESERVATION_HOLD_MIN = 20
 
 
 class SRTProvider:
@@ -46,26 +49,59 @@ class SRTProvider:
             seats_s = 1 if r.special_seat_available() else 0
             if seats_g + seats_s == 0:
                 continue
-            result.append(
-                Train(
-                    provider="srt",
-                    train_no=str(r.train_number),
-                    train_type=r.train_name,
-                    dep_station=r.dep_station_name,
-                    arr_station=r.arr_station_name,
-                    date=watch.date,
-                    dep_time=dep_time,
-                    arr_time=_fmt_time(r.arr_time),
-                    seats_general=seats_g,
-                    seats_special=seats_s,
-                    raw_id=f"{watch.date}-{r.train_number}-{dep_time}",
-                    booking_url=SRAIL_BOOKING,
-                )
+            t = Train(
+                provider="srt",
+                train_no=str(r.train_number),
+                train_type=r.train_name,
+                dep_station=r.dep_station_name,
+                arr_station=r.arr_station_name,
+                date=watch.date,
+                dep_time=dep_time,
+                arr_time=_fmt_time(r.arr_time),
+                seats_general=seats_g,
+                seats_special=seats_s,
+                raw_id=f"{watch.date}-{r.train_number}-{dep_time}",
+                booking_url=SRAIL_BOOKING,
+                seat_class=watch.seat_class,
             )
+            t._raw = r
+            result.append(t)
         return result
 
-    def reserve(self, train: Train) -> Reservation:
-        raise NotImplementedError("auto_reserve is Phase 3 — not implemented yet")
+    def reserve(self, train: Train, passengers: Passengers) -> Reservation:
+        if self._client is None:
+            raise RuntimeError("SRTProvider.reserve called before login")
+        raw = train._raw
+        if raw is None:
+            raise RuntimeError(
+                "train.raw not set — provider.reserve() must be called on a Train returned "
+                "by the same provider's search() in the same login session"
+            )
+        psgr = _build_passengers(passengers)
+        seat_type = _seat_type(train.seat_class)
+        try:
+            rsv = self._client.reserve(raw, passengers=psgr, special_seat=seat_type)
+        except (SRTResponseError, SRTNotLoggedInError) as e:
+            raise RuntimeError(f"SRT 예약 오류: {e}") from e
+
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        return Reservation(
+            provider="srt",
+            reservation_id=str(getattr(rsv, "reservation_number", "") or rsv),
+            train_no=train.train_no,
+            expires_at=expires_at,
+            booking_url=SRAIL_BOOKING,
+        )
+
+
+def _seat_type(seat_class: str) -> "SeatType":
+    if seat_class == "general":
+        return SeatType.GENERAL_ONLY
+    if seat_class == "special":
+        return SeatType.SPECIAL_ONLY
+    return SeatType.GENERAL_FIRST
 
 
 def _build_passengers(p: Passengers) -> list:

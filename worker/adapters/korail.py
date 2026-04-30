@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from korail2 import (
     AdultPassenger,
     ChildPassenger,
     Korail,
+    KorailError,
     NeedToLoginError,
     NoResultsError,
+    ReserveOption,
     SeniorPassenger,
+    SoldOutError,
 )
 
 from ..models import Passengers, Reservation, Train, Watch
 
 LETSKORAIL_BOOKING = "https://www.letskorail.com"
+RESERVATION_HOLD_MIN = 20
 
 
 class KorailProvider:
@@ -56,26 +62,61 @@ class KorailProvider:
             seats_s = 1 if r.has_special_seat() else 0
             if seats_g + seats_s == 0:
                 continue
-            result.append(
-                Train(
-                    provider="korail",
-                    train_no=str(r.train_no),
-                    train_type=train_type,
-                    dep_station=r.dep_name,
-                    arr_station=r.arr_name,
-                    date=watch.date,
-                    dep_time=dep_time,
-                    arr_time=_fmt_time(r.arr_time),
-                    seats_general=seats_g,
-                    seats_special=seats_s,
-                    raw_id=f"{watch.date}-{r.train_no}-{dep_time}",
-                    booking_url=LETSKORAIL_BOOKING,
-                )
+            t = Train(
+                provider="korail",
+                train_no=str(r.train_no),
+                train_type=train_type,
+                dep_station=r.dep_name,
+                arr_station=r.arr_name,
+                date=watch.date,
+                dep_time=dep_time,
+                arr_time=_fmt_time(r.arr_time),
+                seats_general=seats_g,
+                seats_special=seats_s,
+                raw_id=f"{watch.date}-{r.train_no}-{dep_time}",
+                booking_url=LETSKORAIL_BOOKING,
+                seat_class=watch.seat_class,
             )
+            t._raw = r
+            result.append(t)
         return result
 
-    def reserve(self, train: Train) -> Reservation:
-        raise NotImplementedError("auto_reserve is Phase 3 — not implemented yet")
+    def reserve(self, train: Train, passengers: Passengers) -> Reservation:
+        if self._client is None:
+            raise RuntimeError("KorailProvider.reserve called before login")
+        raw = train._raw
+        if raw is None:
+            raise RuntimeError(
+                "train.raw not set — provider.reserve() must be called on a Train returned "
+                "by the same provider's search() in the same login session"
+            )
+        psgr = _build_passengers(passengers)
+        option = _reserve_option(train.seat_class)
+        try:
+            rsv = self._client.reserve(raw, passengers=psgr, option=option)
+        except SoldOutError as e:
+            raise RuntimeError(f"좌석 매진: {e}") from e
+        except KorailError as e:
+            raise RuntimeError(f"코레일 예약 오류: {e}") from e
+
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=RESERVATION_HOLD_MIN)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        return Reservation(
+            provider="korail",
+            reservation_id=str(getattr(rsv, "rsv_id", "") or rsv),
+            train_no=train.train_no,
+            expires_at=expires_at,
+            booking_url=LETSKORAIL_BOOKING,
+        )
+
+
+def _reserve_option(seat_class: str) -> "ReserveOption":
+    if seat_class == "general":
+        return ReserveOption.GENERAL_ONLY
+    if seat_class == "special":
+        return ReserveOption.SPECIAL_ONLY
+    return ReserveOption.GENERAL_FIRST
 
 
 def _build_passengers(p: Passengers) -> list:

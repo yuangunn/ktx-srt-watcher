@@ -194,7 +194,7 @@ function formToWatch(fd, formEl) {
       senior: Number(fd.get('senior')) || 0,
     },
     seat_class: String(fd.get('seat_class')),
-    auto_reserve: false,
+    auto_reserve: !!formEl.querySelector('input[name="auto_reserve"]')?.checked,
     active: true,
   };
 }
@@ -302,6 +302,8 @@ function renderWatchCard(watch, state) {
   node.dataset.provider = watch.provider;
   node.dataset.active = String(watch.active);
   $('.badge--provider', node).textContent = watch.provider === 'srt' ? 'SRT' : 'KORAIL';
+  const autoBadge = $('.badge--auto-reserve', node);
+  if (autoBadge) autoBadge.hidden = !watch.auto_reserve;
   $('.watch__from', node).textContent = watch.from;
   $('.watch__to', node).textContent = watch.to;
   $('.watch__date', node).textContent = fmtDateLong(watch.date);
@@ -611,7 +613,6 @@ class App {
       const existing = this.config.watches[idx];
       updated.id = existing.id;
       updated.active = existing.active;
-      updated.auto_reserve = existing.auto_reserve;
       this.config.watches[idx] = updated;
     }
     await this._save(`edit watch ${originalId}`);
@@ -758,6 +759,8 @@ class App {
       form.querySelectorAll('input[name="train_type"]').forEach(c => {
         c.checked = (editing.train_types || []).includes(c.value);
       });
+      const autoToggle = form.querySelector('input[name="auto_reserve"]');
+      if (autoToggle) autoToggle.checked = !!editing.auto_reserve;
     }
     $('#sheet-title').textContent = editing ? '워치 수정' : '새 워치';
     $('#sheet-error').hidden = true;

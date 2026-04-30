@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PrivateAttr, field_validator, model_validator
 
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -78,6 +78,9 @@ class Train(BaseModel):
     seats_special: NonNegativeInt = 0
     raw_id: str
     booking_url: str = ""
+    seat_class: SeatClass = "general"
+
+    _raw: Any = PrivateAttr(default=None)
 
     @property
     def total_seats(self) -> int:
@@ -89,3 +92,4 @@ class Reservation(BaseModel):
     reservation_id: str
     train_no: str
     expires_at: str | None = None
+    booking_url: str = ""

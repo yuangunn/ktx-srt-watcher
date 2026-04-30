@@ -186,6 +186,17 @@
         <label class="seg__opt"><input type="radio" name="seat_class" value="any"><span>둘 다</span></label>
       </fieldset>
 
+      <div class="setting-row setting-row--inline">
+        <div class="setting-row__main">
+          <span class="setting-row__title">자동 예약</span>
+          <span class="setting-row__hint">좌석 발견 즉시 20분 임시 예약을 잡습니다. 결제는 코레일톡/SR 앱에서 직접.</span>
+        </div>
+        <label class="toggle">
+          <input class="toggle__input" type="checkbox" name="auto_reserve" aria-label="자동 예약">
+          <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        </label>
+      </div>
+
       <p class="sheet__error" id="sheet-error" hidden></p>
 
       <div class="sheet__actions">
@@ -202,6 +213,7 @@
     <span class="watch__stripe" aria-hidden="true"></span>
     <div class="watch__head">
       <span class="badge badge--provider"></span>
+      <span class="badge badge--auto-reserve" hidden>🔔 자동예약</span>
       <h3 class="watch__route">
         <span class="watch__from"></span>
         <span class="watch__arrow" aria-hidden="true">→</span>

@@ -232,6 +232,11 @@ hr { border: 0; margin: 0; }
   gap: var(--s-4);
   padding: var(--s-2) 0;
 }
+.setting-row--inline {
+  border: 1px solid var(--c-outline-variant);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
+}
 .setting-row__main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .setting-row__title { font-size: 14px; font-weight: 600; color: var(--c-on-surface); }
 .setting-row__hint {
@@ -475,6 +480,12 @@ hr { border: 0; margin: 0; }
 .watch[data-provider="srt"] .badge--provider {
   background: var(--c-tertiary-container);
   color: var(--c-on-tertiary-container);
+}
+.badge--auto-reserve {
+  background: rgba(184, 66, 46, 0.18);
+  color: var(--c-ember);
+  border: 1px solid rgba(184, 66, 46, 0.4);
+  letter-spacing: 0.04em;
 }
 
 /* ---------- button ---------- */

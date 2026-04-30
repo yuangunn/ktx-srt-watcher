@@ -49,12 +49,22 @@ def _train(raw_id: str = "rid", **overrides) -> Train:
 
 
 class FakeProvider:
-    def __init__(self, name: str, search_results=None, raise_on_search: Exception | None = None):
+    def __init__(
+        self,
+        name: str,
+        search_results=None,
+        raise_on_search: Exception | None = None,
+        reserve_result=None,
+        raise_on_reserve: Exception | None = None,
+    ):
         self.name = name
         self.logged_in_with: tuple[str, str] | None = None
         self.searches: list[Watch] = []
+        self.reserve_calls: list[tuple[Train, object]] = []
         self._results = search_results
         self._raise = raise_on_search
+        self._reserve_result = reserve_result
+        self._reserve_raise = raise_on_reserve
 
     def login(self, user_id: str, password: str) -> None:
         self.logged_in_with = (user_id, password)
@@ -67,8 +77,13 @@ class FakeProvider:
             return self._results(watch)
         return list(self._results or [])
 
-    def reserve(self, train: Train) -> Reservation:
-        raise NotImplementedError
+    def reserve(self, train: Train, passengers) -> Reservation:
+        self.reserve_calls.append((train, passengers))
+        if self._reserve_raise:
+            raise self._reserve_raise
+        if self._reserve_result:
+            return self._reserve_result
+        return Reservation(provider=self.name, reservation_id="FAKE", train_no=train.train_no)
 
 
 class NotifyRecorder:
@@ -370,6 +385,103 @@ class TestManualTriggerSummary:
             event_name="schedule",
         )
         assert summary_calls == []
+
+
+class TestAutoReserve:
+    def test_auto_reserve_flag_off_does_not_call_reserve(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=False)]}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+        )
+        assert korail.reserve_calls == []
+
+    def test_auto_reserve_calls_reserve_with_first_new_train(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        t1 = _train(raw_id="r1", train_no="045")
+        t2 = _train(raw_id="r2", train_no="047", dep_time="10:00")
+        korail = FakeProvider("korail", search_results=[t1, t2])
+        success_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda w, t, r: success_calls.append((w.id, t.train_no, r.reservation_id)),
+            now_iso="t",
+        )
+        assert len(korail.reserve_calls) == 1
+        assert korail.reserve_calls[0][0].train_no == "045"
+        assert success_calls == [("w", "045", "FAKE")]
+
+    def test_auto_reserve_skipped_when_no_new_trains(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+        )
+        assert korail.reserve_calls == []
+
+    def test_auto_reserve_skipped_for_already_notified(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        s = {"last_run": None, "watches": {"w": {"last_check": None, "notified_train_ids": ["r1"]}}}
+        main.run_watches(
+            cfg, s,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+        )
+        assert korail.reserve_calls == []
+
+    def test_reserve_failure_calls_failure_notify_and_continues(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True), _watch_dict(id="w2", auto_reserve=False, date="2026-05-16")]}
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            raise_on_reserve=RuntimeError("좌석 매진"),
+        )
+        success_calls: list = []
+        failure_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            notify_reserve_failure_fn=lambda w, t, msg: failure_calls.append((w.id, t.train_no, msg)),
+            now_iso="t",
+        )
+        assert success_calls == []
+        assert len(failure_calls) == 1
+        assert failure_calls[0][0] == "w"
+        assert "매진" in failure_calls[0][2]
+        # Second watch (auto_reserve=False) was processed, no exception bubbled
+        assert len(korail.searches) == 2
+
+    def test_reserve_passengers_threaded_through(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True, passengers={"adult": 2, "child": 1, "senior": 0})]}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+        )
+        assert len(korail.reserve_calls) == 1
+        passengers = korail.reserve_calls[0][1]
+        assert passengers.adult == 2
+        assert passengers.child == 1
 
 
 class TestLoadConfig:

@@ -5,7 +5,7 @@ from typing import Protocol
 
 import requests
 
-from .models import Train, Watch
+from .models import Reservation, Train, Watch
 
 
 class _PostSession(Protocol):
@@ -64,6 +64,64 @@ def notify_summary(watches: list[Watch], *, session: _PostSession | None = None)
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_summary(watches)
     send_telegram(bot_token, chat_id, text, session=session)
+
+
+def format_reservation_success(watch: Watch, train: Train, reservation: Reservation) -> str:
+    deadline = _fmt_deadline(reservation.expires_at)
+    app_name = "코레일톡" if watch.provider == "korail" else "SR 앱"
+    return (
+        f"✅ 임시예약 성공\n"
+        f"\n"
+        f"{watch.from_}→{watch.to} {watch.date}\n"
+        f"{train.dep_time} 발 {train.train_type} {train.train_no}\n"
+        f"\n"
+        f"예약번호 {reservation.reservation_id}\n"
+        f"결제 마감 {deadline}\n"
+        f"\n"
+        f"⚠️ 결제는 {app_name}에서 직접 해 주세요. "
+        f"마감 시간 지나면 좌석이 자동 해제됩니다."
+    )
+
+
+def format_reservation_failure(watch: Watch, train: Train, error_msg: str) -> str:
+    return (
+        f"❌ 임시예약 실패\n"
+        f"\n"
+        f"{watch.from_}→{watch.to} {watch.date}\n"
+        f"{train.dep_time} 발 {train.train_type} {train.train_no}\n"
+        f"\n"
+        f"사유: {error_msg}"
+    )
+
+
+def notify_reservation_success(
+    watch: Watch, train: Train, reservation: Reservation,
+    *, session: _PostSession | None = None,
+) -> None:
+    bot_token = _require_env("TELEGRAM_BOT_TOKEN")
+    chat_id = _require_env("TELEGRAM_CHAT_ID")
+    text = format_reservation_success(watch, train, reservation)
+    send_telegram(bot_token, chat_id, text, session=session)
+
+
+def notify_reservation_failure(
+    watch: Watch, train: Train, error_msg: str,
+    *, session: _PostSession | None = None,
+) -> None:
+    bot_token = _require_env("TELEGRAM_BOT_TOKEN")
+    chat_id = _require_env("TELEGRAM_CHAT_ID")
+    text = format_reservation_failure(watch, train, error_msg)
+    send_telegram(bot_token, chat_id, text, session=session)
+
+
+def _fmt_deadline(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    # "2026-04-30T19:55:00Z" → "19:55"
+    try:
+        return iso.split("T")[1][:5]
+    except (IndexError, AttributeError):
+        return iso
 
 
 def _require_env(name: str) -> str:
