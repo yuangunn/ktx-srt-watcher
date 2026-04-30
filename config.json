@@ -41,5 +41,8 @@
       "auto_reserve": false,
       "active": true
     }
-  ]
+  ],
+  "settings": {
+    "notify_empty_on_cron": true
+  }
 }
