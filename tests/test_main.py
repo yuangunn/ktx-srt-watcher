@@ -575,6 +575,82 @@ class TestAlreadyExistedReservation:
         )
         assert len(success_calls) == 1
 
+
+class TestScheduleReminders:
+    def test_schedules_after_fresh_reservation(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        fresh = Reservation(
+            provider="korail", reservation_id="ABC", train_no="045",
+            expires_at="2026-04-30T20:56:00+09:00",
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=fresh,
+        )
+        sched_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: None,
+            schedule_reminders_fn=lambda *a: sched_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(sched_calls) == 1
+        assert sched_calls[0][2].reservation_id == "ABC"
+
+    def test_does_not_schedule_for_already_existed_reservation(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        existing = Reservation(
+            provider="korail", reservation_id="(기존)", train_no="045",
+            already_existed=True,
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=existing,
+        )
+        sched_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            schedule_reminders_fn=lambda *a: sched_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert sched_calls == []
+
+    def test_schedule_failure_does_not_crash_run(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        fresh = Reservation(
+            provider="korail", reservation_id="ABC", train_no="045",
+            expires_at="2026-04-30T20:56:00+09:00",
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=fresh,
+        )
+
+        def boom(*a):
+            raise RuntimeError("CF Worker unreachable")
+
+        # Should not raise — failure is logged and swallowed
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            schedule_reminders_fn=boom,
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+
     def test_cron_with_notify_empty_setting_skips_summary_when_seats_found(self):
         cfg = {
             "version": 1,

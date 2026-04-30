@@ -49,6 +49,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
         run: python -m worker.main
 
       - name: Commit state

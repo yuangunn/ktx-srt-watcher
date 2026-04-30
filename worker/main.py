@@ -25,6 +25,7 @@ NotifyFn = Callable[[Watch, list[Train]], None]
 SummaryFn = Callable[[list[Watch]], None]
 ReserveSuccessFn = Callable[[Watch, Train, "Reservation"], None]
 ReserveFailureFn = Callable[[Watch, Train, str], None]
+ScheduleRemindersFn = Callable[[Watch, Train, "Reservation"], None]
 
 
 def main() -> int:
@@ -48,6 +49,7 @@ def main() -> int:
         notify_summary_fn=notifier.notify_summary,
         notify_reserve_success_fn=notifier.notify_reservation_success,
         notify_reserve_failure_fn=notifier.notify_reservation_failure,
+        schedule_reminders_fn=notifier.schedule_reminders,
         now_iso=now_iso,
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
@@ -67,6 +69,7 @@ def run_watches(
     notify_summary_fn: SummaryFn | None = None,
     notify_reserve_success_fn: ReserveSuccessFn | None = None,
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
+    schedule_reminders_fn: ScheduleRemindersFn | None = None,
     event_name: str | None = None,
 ) -> None:
     settings_pre = config.get("settings") or {}
@@ -121,6 +124,7 @@ def run_watches(
                     watch, provider, state, notify_fn, now_iso,
                     notify_reserve_success_fn=notify_reserve_success_fn,
                     notify_reserve_failure_fn=notify_reserve_failure_fn,
+                    schedule_reminders_fn=schedule_reminders_fn,
                 )
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
@@ -146,6 +150,7 @@ def _process_watch(
     *,
     notify_reserve_success_fn: ReserveSuccessFn | None = None,
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
+    schedule_reminders_fn: ScheduleRemindersFn | None = None,
 ) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
@@ -181,6 +186,11 @@ def _process_watch(
                 )
                 if notify_reserve_success_fn is not None:
                     notify_reserve_success_fn(watch, target, reservation)
+                if schedule_reminders_fn is not None:
+                    try:
+                        schedule_reminders_fn(watch, target, reservation)
+                    except Exception as e:
+                        log.exception("schedule_reminders failed for %s: %s", reservation.reservation_id, e)
         except Exception as e:
             log.exception("[%s] watch %s: reserve failed for train %s: %s", provider.name, watch.id, target.train_no, e)
             if notify_reserve_failure_fn is not None:

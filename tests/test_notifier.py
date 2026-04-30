@@ -273,3 +273,74 @@ class TestFmtDeadline:
 
     def test_malformed_iso_falls_back_to_substring(self):
         assert notifier._fmt_deadline("2026-04-30T20:56:00") in ("20:56", "2026-04-30T20:56:00")
+
+
+class FakePostResp:
+    def __init__(self, status=200):
+        self.status_code = status
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class FakeHttpSession:
+    def __init__(self, response=None):
+        self.response = response or FakePostResp()
+        self.calls: list[dict] = []
+    def post(self, url, *, json=None, headers=None, timeout=None):
+        self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return self.response
+
+
+class TestScheduleReminders:
+    def test_skipped_when_cf_url_missing(self, monkeypatch):
+        monkeypatch.delenv("CF_WORKER_URL", raising=False)
+        monkeypatch.setenv("REMINDER_TOKEN", "t")
+        session = FakeHttpSession()
+        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        assert session.calls == []
+
+    def test_skipped_when_token_missing(self, monkeypatch):
+        monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev")
+        monkeypatch.delenv("REMINDER_TOKEN", raising=False)
+        session = FakeHttpSession()
+        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        assert session.calls == []
+
+    def test_skipped_when_already_existed(self, monkeypatch):
+        monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev")
+        monkeypatch.setenv("REMINDER_TOKEN", "t")
+        session = FakeHttpSession()
+        from worker.models import Reservation
+        existing = Reservation(
+            provider="korail", reservation_id="(기존)", train_no="045",
+            already_existed=True,
+        )
+        notifier.schedule_reminders(_watch(), _train(), existing, session=session)
+        assert session.calls == []
+
+    def test_skipped_when_no_deadline(self, monkeypatch):
+        monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev")
+        monkeypatch.setenv("REMINDER_TOKEN", "t")
+        session = FakeHttpSession()
+        from worker.models import Reservation
+        no_deadline = Reservation(
+            provider="korail", reservation_id="ABC", train_no="045",
+            expires_at=None,
+        )
+        notifier.schedule_reminders(_watch(), _train(), no_deadline, session=session)
+        assert session.calls == []
+
+    def test_posts_payload_with_bearer(self, monkeypatch):
+        monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev/")  # trailing slash
+        monkeypatch.setenv("REMINDER_TOKEN", "secret")
+        session = FakeHttpSession()
+        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        assert len(session.calls) == 1
+        c = session.calls[0]
+        assert c["url"] == "https://x.workers.dev/reminder/schedule"
+        assert c["headers"]["Authorization"] == "Bearer secret"
+        assert c["json"]["reservation_id"] == "ABC123"
+        assert c["json"]["deadline_iso"] == "2026-04-30T19:55:00+09:00"
+        assert "서울→부산" in c["json"]["route"]
+        assert "045" in c["json"]["train"]
