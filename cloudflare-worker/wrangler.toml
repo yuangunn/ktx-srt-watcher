@@ -2,15 +2,23 @@ name = "ktx-srt-watcher-cron"
 main = "src/index.js"
 compatibility_date = "2026-04-30"
 
-# Two crons fire on this Worker:
-#   - "*/30 * * * *"  → dispatchWatcher: triggers GHA repository_dispatch
-#                       at the cadence the watcher actually polls Korail/SRT
-#   - "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
-#                       any due payment-deadline reminders to Telegram
-# Manual "지금 확인" / workflow_dispatch is unaffected.  Tighten the */30
+# Cron schedules for this Worker (each fires the scheduled handler with
+# event.cron equal to the matching string):
+#   "*/30 * * * *"  → dispatchWatcher: triggers GHA repository_dispatch
+#                     at the cadence the watcher actually polls Korail/SRT
+#   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
+#                     any due payment-deadline reminders to Telegram
+#   "0 */6 * * *"   → heartbeatCheck: alerts if state.json::last_run is
+#                     stale (worker silently dead — PAT expired, GHA
+#                     suspended, code regression, etc.)
+#   "0 0 * * *"     → checkPATExpiration: 00:00 UTC = 09:00 KST. Reads
+#                     the GitHub-Authentication-Token-Expiration header
+#                     and warns 7 days before the worker's GITHUB_TOKEN
+#                     expires (silently breaking the bridge otherwise)
+# Manual "지금 확인" / workflow_dispatch is unaffected. Tighten the */30
 # only when you've moved off GHA free tier or made the repo public.
 [triggers]
-crons = ["*/30 * * * *", "*/1 * * * *"]
+crons = ["*/30 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"

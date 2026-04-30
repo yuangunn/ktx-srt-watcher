@@ -19,6 +19,10 @@ export default {
       ctx.waitUntil(dispatchWatcher(env, "cron"));
     } else if (event.cron === "*/1 * * * *") {
       ctx.waitUntil(processReminders(env));
+    } else if (event.cron === "0 */6 * * *") {
+      ctx.waitUntil(heartbeatCheck(env));
+    } else if (event.cron === "0 0 * * *") {
+      ctx.waitUntil(checkPATExpiration(env));
     }
   },
 
@@ -187,6 +191,124 @@ async function sendTelegram(env, body) {
     const t = await res.text();
     throw new Error(`telegram ${res.status}: ${t}`);
   }
+}
+
+// HEARTBEAT: alert if the watcher hasn't actually polled in too long.
+// We read state.json from main and compare its last_run against now;
+// state.json::last_run is bumped at the start of every non-skipped
+// run_watches, so a value older than HEARTBEAT_STALE_HOURS means the
+// worker has been silently broken (CF Worker dead, PAT expired, GHA
+// suspended, repository_dispatch malformed, etc.).
+const HEARTBEAT_STALE_HOURS = 6;
+
+async function heartbeatCheck(env) {
+  let stateJson;
+  try {
+    const url = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/state.json?ref=main`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ktx-srt-watcher-cf-bridge",
+      },
+    });
+    if (!res.ok) {
+      console.error(`heartbeat: state.json fetch failed: ${res.status}`);
+      return;
+    }
+    const data = await res.json();
+    const decoded = atob(data.content.replace(/\n/g, ""));
+    stateJson = JSON.parse(new TextDecoder().decode(
+      Uint8Array.from(decoded, c => c.charCodeAt(0)),
+    ));
+  } catch (e) {
+    console.error(`heartbeat: parse error: ${e.message}`);
+    return;
+  }
+
+  const lastRun = stateJson?.last_run;
+  if (!lastRun) {
+    // Never run yet — not a stale-watcher case, just nothing to alert on
+    return;
+  }
+  const elapsedHours = (Date.now() - new Date(lastRun).getTime()) / 3_600_000;
+  if (elapsedHours < HEARTBEAT_STALE_HOURS) return;
+
+  const watchCount = Object.keys(stateJson.watches || {}).length;
+  await sendTelegram(
+    env,
+    `⏰ 워커가 ${Math.floor(elapsedHours)}시간 동안 폴링되지 않았습니다.\n\n` +
+      `마지막 실행: ${lastRun}\n` +
+      `활성 워치: ${watchCount}건\n\n` +
+      `점검 대상:\n` +
+      `- CF Worker tail (\`npx wrangler tail\`)\n` +
+      `- GitHub Actions runs 페이지\n` +
+      `- PAT 만료 여부 (Settings → Developer settings)`,
+  );
+  console.log(`[${new Date().toISOString()}] heartbeat alert: ${elapsedHours.toFixed(1)}h since last_run`);
+}
+
+// PAT EXPIRATION: GitHub responds to fine-grained PAT requests with a
+// 'github-authentication-token-expiration' header (RFC 1123 timestamp).
+// We read it once a day; if the worker's GITHUB_TOKEN is < 7 days from
+// expiry we Telegram a reminder. The same PAT is used by /reminder/
+// schedule auth so its expiry would silently break that path too.
+const PAT_WARN_DAYS = 7;
+
+async function checkPATExpiration(env) {
+  let res;
+  try {
+    res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ktx-srt-watcher-cf-bridge",
+      },
+    });
+  } catch (e) {
+    console.error(`PAT check: network error: ${e.message}`);
+    return;
+  }
+  if (!res.ok) {
+    if (res.status === 401) {
+      // Token already invalid — alert immediately
+      await sendTelegram(
+        env,
+        `🚨 CF Worker GITHUB_TOKEN 인증 실패 (401).\n\n` +
+          `토큰이 만료/회수됐을 가능성. 즉시 갱신 필요:\n` +
+          `1. github.com/settings/personal-access-tokens 에서 새 PAT 발급\n` +
+          `   (Contents:rw + Actions:rw on yuangunn/ktx-srt-watcher)\n` +
+          `2. \`npx wrangler secret put GITHUB_TOKEN\` 으로 갱신`,
+      );
+    } else {
+      console.error(`PAT check: HTTP ${res.status}`);
+    }
+    return;
+  }
+  const expiry = res.headers.get("github-authentication-token-expiration");
+  if (!expiry) {
+    // Classic PAT or no-expiry PAT — nothing to warn about
+    return;
+  }
+  const expiryDate = new Date(expiry);
+  const daysLeft = (expiryDate.getTime() - Date.now()) / 86_400_000;
+  if (daysLeft > PAT_WARN_DAYS) {
+    console.log(`PAT check: ${daysLeft.toFixed(1)} days left, no alert`);
+    return;
+  }
+  const dayLabel = Math.max(0, Math.ceil(daysLeft));
+  await sendTelegram(
+    env,
+    `⚠️ CF Worker GITHUB_TOKEN 만료 임박\n\n` +
+      `남은 일수: ${dayLabel}일 (${expiryDate.toISOString().slice(0, 16).replace("T", " ")} UTC)\n\n` +
+      `갱신 절차:\n` +
+      `1. github.com/settings/personal-access-tokens 의 토큰 → Regenerate\n` +
+      `   (권한 그대로: Contents:rw + Actions:rw)\n` +
+      `2. \`cd cloudflare-worker && npx wrangler secret put GITHUB_TOKEN\``,
+  );
+  console.log(`[${new Date().toISOString()}] PAT expiry alert: ${dayLabel}d left`);
 }
 
 function text(body, status = 200) {
