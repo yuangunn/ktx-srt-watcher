@@ -122,6 +122,47 @@ hr { border: 0; margin: 0; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+.header__refresh {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--c-outline-variant);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--c-on-surface-variant);
+  font-family: var(--f-mono);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.header__refresh:hover {
+  color: var(--c-on-surface);
+  border-color: var(--c-outline);
+  background: var(--c-sc-low);
+}
+.header__refresh:active { transform: scale(0.95); }
+.header__refresh:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 3px; }
+.header__refresh[data-state="loading"] {
+  animation: refresh-spin 0.8s linear infinite;
+  pointer-events: none;
+  color: var(--c-on-surface);
+}
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 .header__status {
   display: inline-flex; align-items: center; gap: var(--s-2);
   padding: 7px 14px 7px 12px;

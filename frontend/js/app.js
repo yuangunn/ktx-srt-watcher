@@ -413,8 +413,24 @@ class App {
     this._wireCheckNow();
     this._wireSettings();
     this._wireLogSheet();
+    this._wireRefresh();
     await this._loadAll();
     this._startCountdown();
+  }
+  _wireRefresh() {
+    const btn = $('#refresh-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.state === 'loading') return;
+      btn.dataset.state = 'loading';
+      try {
+        await this._loadAll();
+      } finally {
+        // Keep the spin going at least 400ms so the user gets visual
+        // feedback even if the refetch finishes instantly from cache.
+        setTimeout(() => { btn.dataset.state = ''; }, 400);
+      }
+    });
   }
 
   async _loadAll() {

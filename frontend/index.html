@@ -64,11 +64,14 @@
       <h1 class="header__name">발권창구</h1>
       <span class="header__sub" id="header-sub">cancel-seat watcher</span>
     </div>
-    <button class="header__status" id="check-now" type="button" data-state="idle"
-            aria-label="지금 확인" aria-live="polite">
-      <span class="pulse" id="poll-pulse" data-state="idle" aria-hidden="true"></span>
-      <span class="header__last-run" id="last-run">—</span>
-    </button>
+    <div class="header__actions">
+      <button class="header__refresh" id="refresh-btn" type="button" aria-label="새로고침">↻</button>
+      <button class="header__status" id="check-now" type="button" data-state="idle"
+              aria-label="지금 확인" aria-live="polite">
+        <span class="pulse" id="poll-pulse" data-state="idle" aria-hidden="true"></span>
+        <span class="header__last-run" id="last-run">—</span>
+      </button>
+    </div>
   </header>
 
   <hr class="rule rule--dotted" aria-hidden="true">
