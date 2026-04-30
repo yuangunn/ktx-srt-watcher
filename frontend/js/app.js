@@ -500,9 +500,14 @@ class App {
 
   _renderSettings() {
     const toggle = $('#notify-empty-toggle');
-    if (!toggle) return;
-    const enabled = !!(this.config.settings?.notify_empty_on_cron);
-    toggle.checked = enabled;
+    if (toggle) {
+      toggle.checked = !!(this.config.settings?.notify_empty_on_cron);
+    }
+    const select = $('#poll-interval-select');
+    if (select) {
+      const v = this.config.settings?.poll_interval_min ?? 0;
+      select.value = String(v);
+    }
   }
 
   async _loadRuns() {
@@ -537,10 +542,13 @@ class App {
     const countdownEl = $('#poll-countdown');
     if (!intervalEl || !countdownEl) return;
     const tick = () => {
-      const next = nextTickEpoch(this.cronIntervalMin);
+      const userInterval = Number(this.config.settings?.poll_interval_min) || 0;
+      const effective = Math.max(this.cronIntervalMin, userInterval);
+      const next = nextTickEpoch(effective);
       const remaining = next - Date.now();
-      const label = this.cronSource === 'cf' ? 'CF · 매' : '매';
-      intervalEl.textContent = `${label} ${this.cronIntervalMin}분 자동`;
+      const sourcePrefix = this.cronSource === 'cf' ? 'CF · ' : '';
+      const userTag = userInterval > this.cronIntervalMin ? ` (제한)` : '';
+      intervalEl.textContent = `${sourcePrefix}매 ${effective}분 자동${userTag}`;
       countdownEl.textContent = fmtCountdown(remaining);
       if (remaining <= 0) {
         setTimeout(() => this._loadRuns(), 60000);
@@ -553,13 +561,24 @@ class App {
 
   _wireSettings() {
     const toggle = $('#notify-empty-toggle');
-    if (!toggle) return;
-    toggle.addEventListener('change', async () => {
-      const enabled = toggle.checked;
-      if (!this.config.settings) this.config.settings = {};
-      this.config.settings.notify_empty_on_cron = enabled;
-      await this._save(`settings: notify_empty_on_cron = ${enabled}`);
-    });
+    if (toggle) {
+      toggle.addEventListener('change', async () => {
+        const enabled = toggle.checked;
+        if (!this.config.settings) this.config.settings = {};
+        this.config.settings.notify_empty_on_cron = enabled;
+        await this._save(`settings: notify_empty_on_cron = ${enabled}`);
+      });
+    }
+    const select = $('#poll-interval-select');
+    if (select) {
+      select.addEventListener('change', async () => {
+        const v = parseInt(select.value, 10) || 0;
+        if (!this.config.settings) this.config.settings = {};
+        this.config.settings.poll_interval_min = v;
+        await this._save(`settings: poll_interval_min = ${v}`);
+        this._startCountdown();
+      });
+    }
   }
   _wireLogSheet() {
     const dialog = $('#log-sheet');

@@ -84,6 +84,22 @@
 
     <section class="panel" id="settings-panel">
       <h2 class="panel__title">설정</h2>
+
+      <div class="setting-row">
+        <div class="setting-row__main">
+          <span class="setting-row__title">폴링 간격</span>
+          <span class="setting-row__hint">너무 잦으면 GHA 무료 한도(월 2,000분)에 걸립니다. 30분이 안전 권장. 수동(지금 확인)은 항상 즉시 동작.</span>
+        </div>
+        <select class="select-mini" id="poll-interval-select" aria-label="폴링 간격">
+          <option value="0">기본</option>
+          <option value="5">5분</option>
+          <option value="10">10분</option>
+          <option value="15">15분</option>
+          <option value="30">30분</option>
+          <option value="60">60분</option>
+        </select>
+      </div>
+
       <div class="setting-row">
         <div class="setting-row__main">
           <span class="setting-row__title">빈 결과도 알림</span>

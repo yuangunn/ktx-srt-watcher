@@ -69,6 +69,24 @@ def run_watches(
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
     event_name: str | None = None,
 ) -> None:
+    settings_pre = config.get("settings") or {}
+    poll_interval_min = int(settings_pre.get("poll_interval_min") or 0)
+    is_manual_pre = event_name == "workflow_dispatch"
+    is_automated_pre = event_name in ("schedule", "repository_dispatch")
+    if poll_interval_min > 0 and is_automated_pre and state.get("last_run"):
+        try:
+            last_dt = datetime.fromisoformat(state["last_run"].replace("Z", "+00:00"))
+            now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+            elapsed_sec = (now_dt - last_dt).total_seconds()
+            if elapsed_sec < poll_interval_min * 60:
+                log.info(
+                    "skip run: %.0fs since last_run < %dm interval (%s)",
+                    elapsed_sec, poll_interval_min, event_name,
+                )
+                return
+        except (ValueError, TypeError):
+            pass
+
     state_mod.mark_run(state, now_iso)
 
     active = [Watch.model_validate(w) for w in config.get("watches", []) if w.get("active", True)]

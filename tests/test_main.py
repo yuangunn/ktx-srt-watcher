@@ -382,6 +382,101 @@ class TestManualTriggerSummary:
         )
         assert summary_calls == []
 
+
+class TestPollInterval:
+    def test_skip_when_within_interval(self):
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 10},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:03:00Z",
+            event_name="repository_dispatch",
+        )
+        assert korail.searches == []  # skipped before search
+        # last_run not updated since we early-exit
+        assert state["last_run"] == "2026-04-30T11:00:00Z"
+
+    def test_run_when_interval_elapsed(self):
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 10},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:11:00Z",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.searches) == 1
+        assert state["last_run"] == "2026-04-30T11:11:00Z"
+
+    def test_manual_dispatch_overrides_interval(self):
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 30},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:01:00Z",
+            event_name="workflow_dispatch",
+        )
+        assert len(korail.searches) == 1
+
+    def test_zero_interval_means_no_skip(self):
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 0},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:00:30Z",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.searches) == 1
+
+    def test_first_run_no_skip(self):
+        cfg = {
+            "version": 1,
+            "settings": {"poll_interval_min": 10},
+            "watches": [_watch_dict(id="w")],
+        }
+        state = {"last_run": None, "watches": {}}
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            cfg, state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-04-30T11:11:00Z",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.searches) == 1
+
     def test_cron_with_notify_empty_setting_skips_summary_when_seats_found(self):
         cfg = {
             "version": 1,
