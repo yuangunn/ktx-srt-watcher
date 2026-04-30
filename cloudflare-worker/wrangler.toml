@@ -2,10 +2,13 @@ name = "ktx-srt-watcher-cron"
 main = "src/index.js"
 compatibility_date = "2026-04-30"
 
-# Fires the watcher every 5 minutes.  Adjust as needed; remember Korail/SR
-# anti-bot protection — keep above ~3 min to be safe.
+# Fires the watcher every 30 minutes — safely under the GHA private/free
+# tier's 2,000 min/month cap (since every run is billed for at least one
+# whole minute regardless of actual duration).  Manual "지금 확인" /
+# workflow_dispatch is unaffected by this rate.  Tighten only when you've
+# moved off GHA free tier or made the repo public.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/30 * * * *"]
 
 [vars]
 GITHUB_REPO = "yuangunn/ktx-srt-watcher"
