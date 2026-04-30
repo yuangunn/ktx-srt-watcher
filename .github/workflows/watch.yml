@@ -55,23 +55,32 @@ jobs:
 
       - name: Commit state
         run: |
+          set +e
           git config user.name "ticket-watcher-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          if git diff --staged --quiet; then
-            echo "state.json unchanged — skip commit"
-            exit 0
-          fi
-          git commit -m "chore(state): update [skip ci]"
-          # PWA may PUT config.json concurrently. Retry rebase+push to absorb
-          # remote changes that landed during this run.
+
+          # Snapshot our run's state before any git ops touch the working tree.
+          # Subsequent attempts will reset --hard to remote and merge our
+          # changes back in via worker.state's semantic merge.
+          cp state.json /tmp/state.ours.json
+
           for attempt in 1 2 3 4 5; do
-            if git pull --rebase --autostash origin main && git push; then
+            git fetch origin main || { sleep $((attempt)); continue; }
+            git reset --hard origin/main
+            python -m worker.state merge /tmp/state.ours.json state.json
+            git add state.json
+            if git diff --staged --quiet; then
+              echo "state.json already reflects our run on attempt $attempt — nothing to commit"
+              exit 0
+            fi
+            git commit -m "chore(state): update [skip ci]"
+            if git push; then
               echo "push succeeded on attempt $attempt"
               exit 0
             fi
-            echo "push attempt $attempt failed, retrying..."
-            sleep $((attempt * 2))
+            echo "push attempt $attempt failed (likely concurrent push), retrying..."
+            sleep $((attempt))
           done
-          echo "push failed after 5 attempts"
+
+          echo "state.json push failed after 5 attempts" >&2
           exit 1

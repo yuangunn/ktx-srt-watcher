@@ -90,6 +90,62 @@ class TestMarkers:
         assert s["watches"]["wid"]["notified_train_ids"] == []
 
 
+class TestMergeStates:
+    def test_takes_later_last_run(self):
+        a = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        b = {"last_run": "2026-04-30T11:30:00Z", "watches": {}}
+        assert state.merge_states(a, b)["last_run"] == "2026-04-30T11:30:00Z"
+        assert state.merge_states(b, a)["last_run"] == "2026-04-30T11:30:00Z"
+
+    def test_unions_notified_ids_per_watch(self):
+        a = {"last_run": "t", "watches": {"w1": {"notified_train_ids": ["x", "y"], "last_check": None}}}
+        b = {"last_run": "t", "watches": {"w1": {"notified_train_ids": ["y", "z"], "last_check": None}}}
+        merged = state.merge_states(a, b)
+        assert merged["watches"]["w1"]["notified_train_ids"] == ["x", "y", "z"]
+
+    def test_unions_watch_keys(self):
+        a = {"last_run": "t", "watches": {"w1": {"notified_train_ids": [], "last_check": None}}}
+        b = {"last_run": "t", "watches": {"w2": {"notified_train_ids": [], "last_check": None}}}
+        merged = state.merge_states(a, b)
+        assert set(merged["watches"]) == {"w1", "w2"}
+
+    def test_takes_later_last_check_per_watch(self):
+        a = {"last_run": "t", "watches": {"w1": {"last_check": "2026-04-30T11:00:00Z", "notified_train_ids": []}}}
+        b = {"last_run": "t", "watches": {"w1": {"last_check": "2026-04-30T11:30:00Z", "notified_train_ids": []}}}
+        merged = state.merge_states(a, b)
+        assert merged["watches"]["w1"]["last_check"] == "2026-04-30T11:30:00Z"
+
+    def test_preserves_watch_date(self):
+        a = {
+            "last_run": "t",
+            "watches": {"w1": {"notified_train_ids": [], "last_check": None, "watch_date": "2026-05-15"}},
+        }
+        b = {"last_run": "t", "watches": {"w1": {"notified_train_ids": [], "last_check": None}}}
+        merged = state.merge_states(a, b)
+        assert merged["watches"]["w1"]["watch_date"] == "2026-05-15"
+        assert state.merge_states(b, a)["watches"]["w1"]["watch_date"] == "2026-05-15"
+
+    def test_idempotent_on_identical_inputs(self):
+        s = {
+            "last_run": "2026-04-30T11:00:00Z",
+            "watches": {"w1": {"last_check": "2026-04-30T11:00:00Z", "notified_train_ids": ["a", "b"]}},
+        }
+        assert state.merge_states(s, s) == s
+
+    def test_handles_empty_states(self):
+        a = {"last_run": None, "watches": {}}
+        b = {"last_run": None, "watches": {}}
+        merged = state.merge_states(a, b)
+        assert merged["last_run"] is None
+        assert merged["watches"] == {}
+
+    def test_handles_one_side_null(self):
+        a = {"last_run": "2026-04-30T11:00:00Z", "watches": {}}
+        b = {"last_run": None, "watches": {}}
+        assert state.merge_states(a, b)["last_run"] == "2026-04-30T11:00:00Z"
+        assert state.merge_states(b, a)["last_run"] == "2026-04-30T11:00:00Z"
+
+
 class TestPruneByDate:
     def test_removes_entries_for_passed_dates(self):
         s = {
