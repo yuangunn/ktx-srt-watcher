@@ -133,6 +133,27 @@ class GitHub {
       url: r.html_url,
     }));
   }
+  async getRunJobs(runId) {
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repo}/actions/runs/${runId}/jobs`,
+      { headers: this._headers(), cache: 'no-store' },
+    );
+    if (!res.ok) throw new Error(`get jobs → ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return data.jobs || [];
+  }
+  async getJobLogs(jobId) {
+    // GitHub returns 302 → signed Azure blob URL. fetch() follows redirects
+    // automatically; the signed URL embeds auth so the redirected request
+    // does not need our Authorization header (and would lose it on cross-
+    // origin redirect anyway).
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repo}/actions/jobs/${jobId}/logs`,
+      { headers: this._headers() },
+    );
+    if (!res.ok) throw new Error(`get logs → ${res.status}`);
+    return res.text();
+  }
 }
 
 function encodeUtf8(s) { return new TextEncoder().encode(s).reduce((a, b) => a + String.fromCharCode(b), ''); }
@@ -307,7 +328,7 @@ function renderEmpty(onAdd) {
   return node;
 }
 
-function renderRunRow(run) {
+function renderRunRow(run, onOpen) {
   const node = tpl('tpl-run-row').firstElementChild;
   const concl = run.conclusion || (run.status === 'completed' ? '' : 'in_progress');
   node.querySelector('.run-row__status').dataset.conclusion = concl;
@@ -317,7 +338,42 @@ function renderRunRow(run) {
   const status = run.conclusion || run.status || '—';
   node.querySelector('.run-row__meta').textContent = `${event} · ${dur} · ${status}`;
   node.querySelector('.run-row__link').href = run.url;
+  node.dataset.runId = run.id;
+  node.addEventListener('click', e => {
+    if (e.target.closest('.run-row__link')) return;
+    onOpen(run);
+  });
   return node;
+}
+
+// Trim a GitHub Actions raw log blob to just the "Run watcher" step output.
+// Format: each line begins with an ISO timestamp, e.g.
+//   2026-04-30T08:31:57.6586123Z 2026-04-30 17:31:57,658 INFO ...
+// Step boundaries are marked by "##[group]" lines that contain the step's
+// run command. We slice from the watcher's group to the next ##[group] or
+// the end. Strips the leading ISO timestamp from each line for readability.
+function extractWatcherStep(logsText) {
+  if (!logsText) return '';
+  const lines = logsText.split('\n');
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (start === -1 && /##\[group\].*python -m worker\.main/.test(lines[i])) {
+      start = i + 1;
+    } else if (start !== -1 && /##\[group\]/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  if (start === -1) {
+    // Fallback: just return the last 200 lines stripped of timestamps
+    return lines.slice(-200).map(stripIsoTimestamp).join('\n');
+  }
+  return lines.slice(start, end).map(stripIsoTimestamp).filter(Boolean).join('\n');
+}
+
+function stripIsoTimestamp(line) {
+  return line.replace(/^\s*\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?/, '');
 }
 
 // ----- main -----------------------------------------------------------------
@@ -340,6 +396,7 @@ class App {
     this._wireSheet();
     this._wireCheckNow();
     this._wireSettings();
+    this._wireLogSheet();
     await this._loadAll();
     this._startCountdown();
   }
@@ -416,6 +473,7 @@ class App {
     this.config.watches.forEach(w => {
       const card = renderWatchCard(w, this.state);
       card.querySelector('.toggle__input').addEventListener('change', e => this._toggle(w.id, e.target.checked));
+      card.querySelector('.watch__edit').addEventListener('click', () => this._openSheet(w.id));
       card.querySelector('.watch__delete').addEventListener('click', () => this._delete(w.id));
       root.appendChild(card);
     });
@@ -441,7 +499,7 @@ class App {
         list.appendChild(li);
         return;
       }
-      runs.forEach(r => list.appendChild(renderRunRow(r)));
+      runs.forEach(r => list.appendChild(renderRunRow(r, run => this._showRunLogs(run))));
     } catch (e) {
       if (this._isAuthError(e)) {
         this._handleAuthFailure();
@@ -484,6 +542,43 @@ class App {
       await this._save(`settings: notify_empty_on_cron = ${enabled}`);
     });
   }
+  _wireLogSheet() {
+    const dialog = $('#log-sheet');
+    $('#log-close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+  }
+  async _showRunLogs(run) {
+    const dialog = $('#log-sheet');
+    const meta = $('#log-meta');
+    const content = $('#log-content');
+    const external = $('#log-external');
+    external.href = run.url;
+    const event = EVENT_LABELS[run.event] || run.event || '';
+    const dur = run.status === 'completed' ? fmtDuration(run.started, run.finished) : '진행 중';
+    const status = run.conclusion || run.status || '—';
+    meta.textContent = `${fmtRunTime(run.started)} · ${event} · ${dur} · ${status}`;
+    content.textContent = '로그 불러오는 중…';
+    dialog.showModal();
+
+    try {
+      const jobs = await this.gh.getRunJobs(run.id);
+      if (!jobs.length) {
+        content.textContent = '실행 작업이 없습니다.';
+        return;
+      }
+      const logs = await this.gh.getJobLogs(jobs[0].id);
+      const watcher = extractWatcherStep(logs);
+      content.textContent = watcher || '워커 로그가 비어 있습니다.';
+      content.scrollTop = content.scrollHeight;
+    } catch (e) {
+      if (this._isAuthError(e)) {
+        dialog.close();
+        this._handleAuthFailure();
+        return;
+      }
+      content.textContent = `로그 가져오기 실패 — ${e.message}\n\n우상단 ↗ 으로 GitHub Actions에서 직접 보세요.`;
+    }
+  }
 
   // ---- mutations ----
 
@@ -505,6 +600,21 @@ class App {
   async _create(watch) {
     this.config.watches.push(watch);
     await this._save(`add watch ${watch.id}`);
+    this._renderWatches();
+  }
+
+  async _update(originalId, updated) {
+    const idx = this.config.watches.findIndex(w => w.id === originalId);
+    if (idx < 0) {
+      this.config.watches.push(updated);
+    } else {
+      const existing = this.config.watches[idx];
+      updated.id = existing.id;
+      updated.active = existing.active;
+      updated.auto_reserve = existing.auto_reserve;
+      this.config.watches[idx] = updated;
+    }
+    await this._save(`edit watch ${originalId}`);
     this._renderWatches();
   }
 
@@ -608,8 +718,13 @@ class App {
         if (!watch.train_types.length) throw new Error('열차 종류를 하나 이상 선택하세요');
         if (watch.time_min > watch.time_max) throw new Error('최저 시간이 최대 시간보다 늦습니다');
         $('#sheet-error').hidden = true;
+        const editingId = this._editingWatchId;
         sheet.close();
-        await this._create(watch);
+        if (editingId) {
+          await this._update(editingId, watch);
+        } else {
+          await this._create(watch);
+        }
       } catch (err) {
         const errEl = $('#sheet-error');
         errEl.textContent = err.message;
@@ -619,13 +734,32 @@ class App {
 
     refresh('korail');
   }
-  _openSheet() {
+  _openSheet(watchId = null) {
     const sheet = $('#sheet');
     const form = $('#watch-form');
     form.reset();
-    const provider = form.querySelector('input[name="provider"]:checked')?.value || 'korail';
+    this._editingWatchId = watchId || null;
+    const editing = watchId ? this.config.watches.find(w => w.id === watchId) : null;
+    const provider = editing?.provider || 'korail';
+    form.querySelector(`input[name="provider"][value="${provider}"]`).checked = true;
     fillStationDropdowns(provider, form.querySelector('select[name="from"]'), form.querySelector('select[name="to"]'));
     fillTrainTypeChips(provider, $('#train-type-group'));
+    if (editing) {
+      form.querySelector('select[name="from"]').value = editing.from;
+      form.querySelector('select[name="to"]').value = editing.to;
+      form.querySelector('input[name="date"]').value = editing.date;
+      form.querySelector('input[name="time_min"]').value = editing.time_min;
+      form.querySelector('input[name="time_max"]').value = editing.time_max;
+      form.querySelector('input[name="adult"]').value = editing.passengers?.adult ?? 1;
+      form.querySelector('input[name="child"]').value = editing.passengers?.child ?? 0;
+      form.querySelector('input[name="senior"]').value = editing.passengers?.senior ?? 0;
+      const seatRadio = form.querySelector(`input[name="seat_class"][value="${editing.seat_class}"]`);
+      if (seatRadio) seatRadio.checked = true;
+      form.querySelectorAll('input[name="train_type"]').forEach(c => {
+        c.checked = (editing.train_types || []).includes(c.value);
+      });
+    }
+    $('#sheet-title').textContent = editing ? '워치 수정' : '새 워치';
     $('#sheet-error').hidden = true;
     sheet.showModal();
   }

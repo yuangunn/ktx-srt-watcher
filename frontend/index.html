@@ -107,6 +107,18 @@
     <span class="fab__label">워치 추가</span>
   </button>
 
+  <dialog class="sheet" id="log-sheet">
+    <div class="sheet__form sheet__form--logs">
+      <header class="sheet__header">
+        <button class="icon-btn" type="button" id="log-close" aria-label="닫기">×</button>
+        <h2 class="sheet__title">실행 로그</h2>
+        <a class="icon-btn" id="log-external" target="_blank" rel="noopener" aria-label="GitHub에서 보기">↗</a>
+      </header>
+      <p class="log-meta mono" id="log-meta">—</p>
+      <pre class="log-content mono" id="log-content">—</pre>
+    </div>
+  </dialog>
+
   <dialog class="sheet" id="sheet">
     <form class="sheet__form" method="dialog" id="watch-form" autocomplete="off">
       <header class="sheet__header">
@@ -215,7 +227,8 @@
     <footer class="watch__foot">
       <span class="watch__last-check"></span>
       <div class="watch__controls">
-        <button class="btn btn--danger-ghost watch__delete" type="button">삭제</button>
+        <button class="btn-mini watch__edit" type="button">수정</button>
+        <button class="btn-mini btn-mini--danger watch__delete" type="button">삭제</button>
         <label class="toggle">
           <input class="toggle__input" type="checkbox" aria-label="활성화">
           <span class="toggle__track"><span class="toggle__thumb"></span></span>

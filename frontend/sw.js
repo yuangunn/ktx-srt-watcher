@@ -1,7 +1,7 @@
 // 발권창구 service worker — caches the app shell only.
 // Data (config.json / state.json) is always fetched fresh from GitHub.
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL = [
   './',
   './index.html',

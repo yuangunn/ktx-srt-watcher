@@ -307,6 +307,49 @@ hr { border: 0; margin: 0; }
   font-family: var(--f-mono);
   padding: 8px 0;
 }
+.run-row { cursor: pointer; }
+.run-row:hover { background: var(--c-sc); border-radius: var(--r-sm); }
+.run-row__link { cursor: pointer; }
+
+/* ---------- log sheet ---------- */
+
+.sheet__form--logs {
+  background: var(--c-sc-high);
+  border: 1px solid var(--c-outline);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: var(--s-5) var(--s-5) calc(var(--s-5) + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 720px;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  overflow: hidden;
+  animation: sheet-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.log-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--c-on-surface-variant);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.log-content {
+  margin: 0;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--c-on-surface);
+  background: var(--c-sc-lowest);
+  border: 1px solid var(--c-outline-variant);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  white-space: pre;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* ---------- watch card ---------- */
 
@@ -463,6 +506,32 @@ hr { border: 0; margin: 0; }
   letter-spacing: 0.04em;
 }
 .btn--danger-ghost:hover { color: var(--c-error); border-color: var(--c-error); background: rgba(226, 107, 122, 0.06); }
+
+.btn-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  border: 1px solid var(--c-outline-variant);
+  background: transparent;
+  color: var(--c-on-surface-variant);
+  font-family: var(--f-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.btn-mini:hover { color: var(--c-on-surface); border-color: var(--c-outline); background: var(--c-sc-low); }
+.btn-mini:active { transform: scale(0.97); }
+.btn-mini--danger:hover {
+  color: var(--c-error);
+  border-color: var(--c-error);
+  background: rgba(226, 107, 122, 0.06);
+}
 
 /* ---------- toggle ---------- */
 
