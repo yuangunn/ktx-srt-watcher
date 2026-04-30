@@ -22,6 +22,7 @@ CONFIG_PATH = Path("config.json")
 STATE_PATH = Path("state.json")
 
 NotifyFn = Callable[[Watch, list[Train]], None]
+SummaryFn = Callable[[list[Watch]], None]
 
 
 def main() -> int:
@@ -42,7 +43,9 @@ def main() -> int:
         providers=providers,
         creds=creds,
         notify_fn=notifier.notify,
+        notify_summary_fn=notifier.notify_summary,
         now_iso=now_iso,
+        event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
     state_mod.prune_past_dates(s, today=now_iso[:10])
     state_mod.write_state(STATE_PATH, s)
@@ -57,6 +60,8 @@ def run_watches(
     creds: dict[str, tuple[str, str]],
     notify_fn: NotifyFn,
     now_iso: str,
+    notify_summary_fn: SummaryFn | None = None,
+    event_name: str | None = None,
 ) -> None:
     state_mod.mark_run(state, now_iso)
 
@@ -65,6 +70,7 @@ def run_watches(
     for w in active:
         by_provider.setdefault(w.provider, []).append(w)
 
+    new_train_total = 0
     for provider_name, watches in by_provider.items():
         provider = providers.get(provider_name)
         if provider is None:
@@ -78,9 +84,15 @@ def run_watches(
             continue
         for watch in watches:
             try:
-                _process_watch(watch, provider, state, notify_fn, now_iso)
+                new_train_total += _process_watch(watch, provider, state, notify_fn, now_iso)
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
+
+    if event_name == "workflow_dispatch" and new_train_total == 0 and notify_summary_fn is not None:
+        try:
+            notify_summary_fn(active)
+        except Exception as e:
+            log.exception("summary notify failed: %s", e)
 
 
 def _process_watch(
@@ -89,7 +101,7 @@ def _process_watch(
     state: dict[str, Any],
     notify_fn: NotifyFn,
     now_iso: str,
-) -> None:
+) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
 
@@ -99,11 +111,12 @@ def _process_watch(
 
     if not new_trains:
         log.info("[%s] watch %s: no new seats (%d searched)", provider.name, watch.id, len(trains))
-        return
+        return 0
 
     log.info("[%s] watch %s: %d new seat(s)", provider.name, watch.id, len(new_trains))
     notify_fn(watch, new_trains)
     state_mod.add_notified_ids(state, watch.id, [t.raw_id for t in new_trains])
+    return len(new_trains)
 
 
 def load_config(path: Path | str) -> dict[str, Any]:

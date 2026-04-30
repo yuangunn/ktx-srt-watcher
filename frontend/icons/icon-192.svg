@@ -1,13 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
   <rect width="192" height="192" fill="#0E1014"/>
-  <rect x="22" y="22" width="148" height="148" rx="20" ry="20" fill="none" stroke="#272A30" stroke-width="2"/>
-  <rect x="22" y="22" width="148" height="3" fill="#5BA8E5"/>
-  <rect x="22" y="170" width="148" height="3" fill="#E26B7A" transform="translate(0 -6)"/>
-  <text x="96" y="118"
-        font-family="'Bricolage Grotesque', 'Pretendard Variable', system-ui, sans-serif"
-        font-size="92"
-        font-weight="600"
-        fill="#ECE7DD"
-        text-anchor="middle"
-        letter-spacing="-2">발</text>
+
+  <!-- Alert ring above train, far right (notification badge feel) -->
+  <g transform="translate(140, 50)">
+    <!-- Concentric ring + dot -->
+    <circle r="12" fill="none" stroke="#E26B7A" stroke-width="2" opacity="0.35"/>
+    <circle r="6" fill="#E26B7A"/>
+  </g>
+
+  <!-- Bullet train side silhouette, nose pointing right (speeding forward) -->
+  <g transform="translate(96, 110)">
+    <!-- Body: tapered nose on the RIGHT -->
+    <path d="
+      M -68,-22
+      Q -68,-32 -56,-32
+      L 32,-32
+      Q 56,-32 66,-12
+      L 70,0
+      Q 70,12 56,12
+      L -56,12
+      Q -68,12 -68,2
+      Z
+    " fill="#ECE7DD"/>
+    <!-- Front windshield (right side, on the nose) -->
+    <path d="
+      M 30,-26
+      Q 50,-26 58,-12
+      L 60,-2
+      L 30,-2
+      Z
+    " fill="#0E1014"/>
+    <!-- Side windows (left to middle) -->
+    <rect x="-58" y="-24" width="14" height="10" rx="2" fill="#0E1014"/>
+    <rect x="-40" y="-24" width="14" height="10" rx="2" fill="#0E1014"/>
+    <rect x="-22" y="-24" width="14" height="10" rx="2" fill="#0E1014"/>
+    <rect x="-4" y="-24" width="14" height="10" rx="2" fill="#0E1014"/>
+    <rect x="14" y="-24" width="14" height="10" rx="2" fill="#0E1014"/>
+    <!-- Headlight on the nose -->
+    <circle cx="62" cy="4" r="3" fill="#5BA8E5"/>
+  </g>
+
+  <!-- Track stripes -->
+  <rect x="22" y="146" width="148" height="2.5" fill="#5BA8E5"/>
+  <rect x="22" y="153" width="148" height="2.5" fill="#E26B7A"/>
 </svg>

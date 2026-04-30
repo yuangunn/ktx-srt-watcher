@@ -1,20 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="#0E1014"/>
-  <rect x="58" y="58" width="396" height="396" rx="54" ry="54" fill="none" stroke="#272A30" stroke-width="4"/>
-  <rect x="58" y="58" width="396" height="8" fill="#5BA8E5"/>
-  <rect x="58" y="446" width="396" height="8" fill="#E26B7A"/>
-  <text x="256" y="316"
-        font-family="'Bricolage Grotesque', 'Pretendard Variable', system-ui, sans-serif"
-        font-size="248"
-        font-weight="600"
-        fill="#ECE7DD"
-        text-anchor="middle"
-        letter-spacing="-6">발</text>
-  <text x="256" y="380"
-        font-family="'JetBrains Mono', monospace"
-        font-size="22"
-        font-weight="500"
-        fill="#9C9588"
-        text-anchor="middle"
-        letter-spacing="6">BAL · GWON · CHANG · GU</text>
+
+  <!-- Alert ring/dot -->
+  <g transform="translate(372, 132)">
+    <circle r="34" fill="none" stroke="#E26B7A" stroke-width="5" opacity="0.35"/>
+    <circle r="17" fill="#E26B7A"/>
+  </g>
+
+  <!-- Bullet train side, nose right -->
+  <g transform="translate(256, 290)">
+    <path d="
+      M -184,-58 Q -184,-86 -152,-86 L 86,-86 Q 152,-86 178,-32 L 188,0
+      Q 188,32 152,32 L -152,32 Q -184,32 -184,5 Z
+    " fill="#ECE7DD"/>
+    <!-- Windshield -->
+    <path d="
+      M 80,-70 Q 132,-70 156,-32 L 162,-6 L 80,-6 Z
+    " fill="#0E1014"/>
+    <!-- Side windows -->
+    <rect x="-156" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
+    <rect x="-110" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
+    <rect x="-64" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
+    <rect x="-18" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
+    <rect x="28" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
+    <!-- Headlight -->
+    <circle cx="166" cy="10" r="8" fill="#5BA8E5"/>
+  </g>
+
+  <!-- Track stripes -->
+  <rect x="60" y="392" width="392" height="6" fill="#5BA8E5"/>
+  <rect x="60" y="410" width="392" height="6" fill="#E26B7A"/>
+
+  <!-- Wordmark -->
+  <text x="256" y="468"
+        font-family="'JetBrains Mono', ui-monospace, monospace"
+        font-size="18" font-weight="500" fill="#9C9588"
+        text-anchor="middle" letter-spacing="6">KTX · SRT · WATCHER</text>
 </svg>

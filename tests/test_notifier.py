@@ -154,3 +154,39 @@ class TestNotify:
         session = FakeSession()
         notifier.notify(_watch(), [], session=session)
         assert session.calls == []
+
+
+class TestFormatSummary:
+    def test_empty_watch_list_returns_inactive_message(self):
+        msg = notifier.format_summary([])
+        assert "활성 워치 없음" in msg
+
+    def test_summary_lists_each_watch_route_and_window(self):
+        watches = [
+            _watch(),
+            _watch(**{"id": "w2", "from": "수서", "to": "부산", "provider": "srt", "train_types": ["SRT"]}),
+        ]
+        msg = notifier.format_summary(watches)
+        assert "확인 완료" in msg
+        assert "잔여 0건" in msg
+        assert "서울→부산" in msg
+        assert "수서→부산" in msg
+        assert "[KTX]" in msg
+        assert "[SRT]" in msg
+
+
+class TestNotifySummary:
+    def test_sends_telegram(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "T")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "C")
+        session = FakeSession()
+        notifier.notify_summary([_watch()], session=session)
+        assert len(session.calls) == 1
+        assert "확인 완료" in session.calls[0]["json"]["text"]
+
+    def test_sends_even_when_watches_empty(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "T")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "C")
+        session = FakeSession()
+        notifier.notify_summary([], session=session)
+        assert len(session.calls) == 1

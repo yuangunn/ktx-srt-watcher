@@ -49,6 +49,23 @@ def notify(watch: Watch, trains: list[Train], *, session: _PostSession | None = 
     send_telegram(bot_token, chat_id, text, session=session)
 
 
+def format_summary(watches: list[Watch]) -> str:
+    if not watches:
+        return "🔍 확인 완료 · 활성 워치 없음"
+    lines = ["🔍 확인 완료 · 잔여 0건", ""]
+    for w in watches:
+        types = "/".join(w.train_types)
+        lines.append(f"[{types}] {w.from_}→{w.to} {w.date} {w.time_min}–{w.time_max}")
+    return "\n".join(lines)
+
+
+def notify_summary(watches: list[Watch], *, session: _PostSession | None = None) -> None:
+    bot_token = _require_env("TELEGRAM_BOT_TOKEN")
+    chat_id = _require_env("TELEGRAM_CHAT_ID")
+    text = format_summary(watches)
+    send_telegram(bot_token, chat_id, text, session=session)
+
+
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:

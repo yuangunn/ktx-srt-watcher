@@ -32,12 +32,14 @@ jobs:
 
       - name: Run watcher
         env:
+          TZ: Asia/Seoul
           KORAIL_ID: ${{ secrets.KORAIL_ID }}
           KORAIL_PW: ${{ secrets.KORAIL_PW }}
           SRT_ID: ${{ secrets.SRT_ID }}
           SRT_PW: ${{ secrets.SRT_PW }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: python -m worker.main
 
       - name: Commit state

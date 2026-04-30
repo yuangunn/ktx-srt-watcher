@@ -254,6 +254,67 @@ class TestRunWatches:
         assert s["watches"]["w"]["watch_date"] == "2026-05-15"
 
 
+class TestManualTriggerSummary:
+    def test_sends_summary_on_workflow_dispatch_with_zero_results(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list[list[Watch]] = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(list(ws)),
+            now_iso="t",
+            event_name="workflow_dispatch",
+        )
+        assert len(summary_calls) == 1
+        assert [w.id for w in summary_calls[0]] == ["w"]
+
+    def test_does_not_send_summary_on_cron_trigger(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="schedule",
+        )
+        assert summary_calls == []
+
+    def test_does_not_send_summary_when_new_seats_found(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="workflow_dispatch",
+        )
+        assert summary_calls == []
+
+    def test_summary_function_optional(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
+        korail = FakeProvider("korail", search_results=[])
+        # No summary fn passed — should not raise
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+            event_name="workflow_dispatch",
+        )
+
+
 class TestLoadConfig:
     def test_loads_valid_config(self, tmp_path: Path):
         path = tmp_path / "config.json"
