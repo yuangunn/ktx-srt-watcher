@@ -816,8 +816,17 @@ function renderSetup(onSubmit) {
 
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
-  try { await navigator.serviceWorker.register('./sw.js', { scope: './' }); }
-  catch (e) { console.warn('SW registration failed', e); }
+  try {
+    await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type !== 'sw-updated') return;
+      // Only reload if the user isn't mid-interaction with a dialog.
+      const open = document.querySelector('dialog[open]');
+      if (!open) location.reload();
+    });
+  } catch (e) {
+    console.warn('SW registration failed', e);
+  }
 }
 
 // ----- bootstrap ------------------------------------------------------------

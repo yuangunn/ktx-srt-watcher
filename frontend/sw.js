@@ -1,7 +1,7 @@
 // 발권창구 service worker — caches the app shell only.
 // Data (config.json / state.json) is always fetched fresh from GitHub.
 
-const VERSION = 'v9';
+const VERSION = 'v10';
 const SHELL = [
   './',
   './index.html',
@@ -17,11 +17,16 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)));
+    await self.clients.claim();
+    // Tell already-open windows that a new shell is live.  app.js listens
+    // for this and soft-reloads (only when no dialog is open, so an
+    // in-progress edit isn't lost).
+    const wins = await self.clients.matchAll({ type: 'window' });
+    wins.forEach(w => w.postMessage({ type: 'sw-updated', version: VERSION }));
+  })());
 });
 
 self.addEventListener('fetch', e => {
