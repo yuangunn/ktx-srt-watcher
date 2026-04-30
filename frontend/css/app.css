@@ -505,6 +505,70 @@ hr { border: 0; margin: 0; }
 .field__input:focus { border-color: var(--c-primary); background: var(--c-sc); }
 .field__input--mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 .field__input[type="date"], .field__input[type="time"] { color-scheme: dark; }
+.field__input--select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%239C9588' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='1,1.5 6,6.5 11,1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 12px 8px;
+  padding-right: 40px;
+  color-scheme: dark;
+  cursor: pointer;
+}
+.field__input--select option {
+  background: var(--c-sc);
+  color: var(--c-on-surface);
+}
+.field__input--select:invalid { color: var(--c-on-surface-variant); }
+
+.check-group {
+  border: 1px solid var(--c-outline-variant);
+  border-radius: var(--r-md);
+  padding: 4px 14px 14px;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: transparent;
+}
+.check-group legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-on-surface-variant);
+  margin-bottom: 4px;
+}
+.check-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: var(--c-sc-low);
+  border: 1px solid var(--c-outline-variant);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-on-surface-variant);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.check-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.check-chip:has(input:focus-visible) { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+.check-group--korail .check-chip:has(input:checked) {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+  border-color: transparent;
+}
+.check-group--srt .check-chip:has(input:checked) {
+  background: var(--c-tertiary-container);
+  color: var(--c-on-tertiary-container);
+  border-color: transparent;
+}
 
 .row { display: grid; gap: var(--s-3); }
 .row--2 { grid-template-columns: 1fr 1fr; }

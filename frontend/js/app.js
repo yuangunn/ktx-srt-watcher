@@ -8,6 +8,48 @@
 const STORAGE_KEY = 'balgwon.config';
 const FETCH_HEADERS = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
 
+// ----- rail data ------------------------------------------------------------
+// Curated from Korean Wikipedia (KTX / 수서고속철도). Includes every station
+// that KTX or SRT trains actually stop at as of 2026-04. When new lines open
+// (e.g., 동해선 추가구간) add stations here — order within a provider is
+// unimportant since dropdowns sort with localeCompare('ko').
+const RAIL_DATA = {
+  korail: {
+    stations: [
+      '가남', '감곡장호원', '강릉', '경산', '경주', '계룡', '곡성', '공주',
+      '광명', '광주송정', '구례구', '구포', '기장', '김제', '김천(구미)',
+      '나주', '남원', '남창', '논산', '단양', '대전', '동대구', '동해', '둔내',
+      '마산', '만종', '목포', '묵호', '문경', '물금', '밀양',
+      '부발', '부산', '부전', '북울산',
+      '살미', '삼척', '상봉', '서대구', '서대전', '서울', '서원주', '센텀',
+      '수안보온천', '수원', '순천', '신해운대',
+      '안동', '앙성온천', '양평', '여수엑스포', '여천', '연풍', '영덕',
+      '영등포', '영주', '영천', '오송', '용산', '울산', '울진', '원주', '의성',
+      '익산', '장성', '전주', '정동진', '정읍', '제천', '진부(오대산)', '진영', '진주',
+      '창원', '창원중앙', '천안아산', '청량리', '충주',
+      '태화강', '판교', '평창', '포항', '풍기', '행신', '횡성',
+    ],
+    train_types: [
+      { value: 'KTX', label: 'KTX', default: true },
+      { value: 'KTX-산천', label: 'KTX-산천', default: true },
+      { value: 'KTX-청룡', label: 'KTX-청룡', default: false },
+      { value: 'KTX-이음', label: 'KTX-이음', default: false },
+    ],
+  },
+  srt: {
+    stations: [
+      '경주', '곡성', '공주', '광주송정', '구례구',
+      '김천(구미)', '나주', '남원', '남창', '대전', '동대구', '동탄',
+      '마산', '목포', '밀양', '부산', '서대구', '수서', '순천',
+      '여수엑스포', '여천', '오송', '울산', '익산', '전주', '정읍',
+      '진영', '진주', '창원', '창원중앙', '천안아산', '평택지제', '포항',
+    ],
+    train_types: [
+      { value: 'SRT', label: 'SRT', default: true },
+    ],
+  },
+};
+
 // ----- storage --------------------------------------------------------------
 
 function loadCreds() {
@@ -93,12 +135,8 @@ function newWatchId(form) {
   return `${slug}-${stamp}`;
 }
 
-function parseTrainTypes(s) {
-  return s.split(',').map(t => t.trim()).filter(Boolean);
-}
-
-function formToWatch(fd) {
-  const train_types = parseTrainTypes(String(fd.get('train_types')));
+function formToWatch(fd, formEl) {
+  const train_types = Array.from(formEl.querySelectorAll('input[name="train_type"]:checked')).map(i => i.value);
   return {
     id: newWatchId({
       from: String(fd.get('from')),
@@ -121,6 +159,29 @@ function formToWatch(fd) {
     auto_reserve: false,
     active: true,
   };
+}
+
+function fillStationDropdowns(provider, fromSelect, toSelect) {
+  const sorted = RAIL_DATA[provider].stations.slice().sort((a, b) => a.localeCompare(b, 'ko'));
+  const opts = (placeholder) => {
+    const lines = [`<option value="" disabled selected>${placeholder}</option>`];
+    sorted.forEach(s => lines.push(`<option value="${s}">${s}</option>`));
+    return lines.join('');
+  };
+  fromSelect.innerHTML = opts('출발역 선택');
+  toSelect.innerHTML = opts('도착역 선택');
+}
+
+function fillTrainTypeChips(provider, group) {
+  group.className = `check-group check-group--${provider}`;
+  const legend = '<legend class="field__label">열차 종류</legend>';
+  const chips = RAIL_DATA[provider].train_types.map(t => `
+    <label class="check-chip">
+      <input type="checkbox" name="train_type" value="${t.value}"${t.default ? ' checked' : ''}>
+      <span>${t.label}</span>
+    </label>
+  `).join('');
+  group.innerHTML = legend + chips;
 }
 
 // ----- rendering ------------------------------------------------------------
@@ -342,17 +403,34 @@ class App {
   }
   _wireSheet() {
     const sheet = $('#sheet');
+    const form = $('#watch-form');
+    const fromSel = form.querySelector('select[name="from"]');
+    const toSel = form.querySelector('select[name="to"]');
+    const trainGroup = $('#train-type-group');
+
+    const refresh = (provider) => {
+      fillStationDropdowns(provider, fromSel, toSel);
+      fillTrainTypeChips(provider, trainGroup);
+    };
+
+    form.querySelectorAll('input[name="provider"]').forEach(input => {
+      input.addEventListener('change', e => refresh(e.target.value));
+    });
+
     $('#sheet-close').addEventListener('click', () => sheet.close());
     $('#sheet-cancel').addEventListener('click', () => sheet.close());
     sheet.addEventListener('click', e => {
       if (e.target === sheet) sheet.close();
     });
-    $('#watch-form').addEventListener('submit', async e => {
+
+    form.addEventListener('submit', async e => {
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        const watch = formToWatch(fd);
-        if (!watch.train_types.length) throw new Error('열차 종류를 하나 이상 입력하세요');
+        const watch = formToWatch(fd, e.target);
+        if (!watch.from || !watch.to) throw new Error('출발역과 도착역을 선택하세요');
+        if (watch.from === watch.to) throw new Error('출발역과 도착역이 같습니다');
+        if (!watch.train_types.length) throw new Error('열차 종류를 하나 이상 선택하세요');
         if (watch.time_min > watch.time_max) throw new Error('최저 시간이 최대 시간보다 늦습니다');
         $('#sheet-error').hidden = true;
         sheet.close();
@@ -363,10 +441,16 @@ class App {
         errEl.hidden = false;
       }
     });
+
+    refresh('korail');
   }
   _openSheet() {
     const sheet = $('#sheet');
-    $('#watch-form').reset();
+    const form = $('#watch-form');
+    form.reset();
+    const provider = form.querySelector('input[name="provider"]:checked')?.value || 'korail';
+    fillStationDropdowns(provider, form.querySelector('select[name="from"]'), form.querySelector('select[name="to"]'));
+    fillTrainTypeChips(provider, $('#train-type-group'));
     $('#sheet-error').hidden = true;
     sheet.showModal();
   }

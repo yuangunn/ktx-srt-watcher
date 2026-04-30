@@ -99,11 +99,11 @@
       <div class="row row--2">
         <label class="field">
           <span class="field__label">출발</span>
-          <input class="field__input" name="from" list="stations" placeholder="수원" required>
+          <select class="field__input field__input--select" name="from" required></select>
         </label>
         <label class="field">
           <span class="field__label">도착</span>
-          <input class="field__input" name="to" list="stations" placeholder="부산" required>
+          <select class="field__input field__input--select" name="to" required></select>
         </label>
       </div>
 
@@ -123,10 +123,9 @@
         </label>
       </div>
 
-      <label class="field">
-        <span class="field__label">열차 종류 <span class="field__hint">(쉼표로 구분)</span></span>
-        <input class="field__input" name="train_types" placeholder="KTX, KTX-산천" required>
-      </label>
+      <fieldset class="check-group" id="train-type-group" aria-label="열차 종류">
+        <legend class="field__label">열차 종류</legend>
+      </fieldset>
 
       <div class="row row--3">
         <label class="field">
@@ -159,12 +158,6 @@
     </form>
   </dialog>
 
-  <datalist id="stations">
-    <option value="서울"><option value="용산"><option value="광명"><option value="수원">
-    <option value="천안아산"><option value="오송"><option value="대전"><option value="김천구미">
-    <option value="동대구"><option value="신경주"><option value="울산"><option value="부산">
-    <option value="수서"><option value="동탄"><option value="평택지제">
-  </datalist>
 </template>
 
 <template id="tpl-watch">
