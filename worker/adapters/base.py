@@ -13,4 +13,10 @@ class Provider(Protocol):
 
     def search(self, watch: Watch) -> list[Train]: ...
 
-    def reserve(self, train: Train, passengers: Passengers) -> Reservation: ...
+    def reserve(
+        self,
+        train: Train,
+        passengers: Passengers,
+        *,
+        allow_waiting: bool = False,
+    ) -> Reservation: ...

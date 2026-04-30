@@ -21,11 +21,15 @@ log = logging.getLogger("ticket_watcher")
 CONFIG_PATH = Path("config.json")
 STATE_PATH = Path("state.json")
 
-NotifyFn = Callable[[Watch, list[Train]], None]
-SummaryFn = Callable[[list[Watch]], None]
+NotifyFn = Callable[..., None]   # (Watch, list[Train], *, silent: bool=False)
+SummaryFn = Callable[..., None]  # (list[Watch], *, silent: bool=False)
 ReserveSuccessFn = Callable[[Watch, Train, "Reservation"], None]
 ReserveFailureFn = Callable[[Watch, Train, str], None]
 ScheduleRemindersFn = Callable[[Watch, Train, "Reservation"], None]
+
+# How many candidate trains to attempt reserving when the first one(s) are
+# already taken. Caps the burst of API calls into Korail/SRT per run.
+MAX_RESERVE_CANDIDATES = 3
 
 
 def main() -> int:
@@ -74,8 +78,18 @@ def run_watches(
 ) -> None:
     settings_pre = config.get("settings") or {}
     poll_interval_min = int(settings_pre.get("poll_interval_min") or 0)
+    allow_waiting_list = bool(settings_pre.get("allow_waiting_list", False))
+    quiet_start = settings_pre.get("quiet_hours_start") or None
+    quiet_end = settings_pre.get("quiet_hours_end") or None
     is_manual_pre = event_name == "workflow_dispatch"
     is_automated_pre = event_name in ("schedule", "repository_dispatch")
+    # Quiet hours suppress the notification *sound*, not the message.
+    # Manual triggers (지금 확인) bypass quiet hours — user explicitly
+    # asked. Reservation success/failure/reminders also bypass downstream.
+    silent_now = (
+        not is_manual_pre
+        and notifier.is_quiet_hour_kst(now_iso, quiet_start, quiet_end)
+    )
     if poll_interval_min > 0 and is_automated_pre and state.get("last_run"):
         try:
             last_dt = datetime.fromisoformat(state["last_run"].replace("Z", "+00:00"))
@@ -125,6 +139,8 @@ def run_watches(
                     notify_reserve_success_fn=notify_reserve_success_fn,
                     notify_reserve_failure_fn=notify_reserve_failure_fn,
                     schedule_reminders_fn=schedule_reminders_fn,
+                    allow_waiting=allow_waiting_list,
+                    silent=silent_now,
                 )
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
@@ -136,6 +152,9 @@ def run_watches(
     should_summarize = is_manual or (notify_empty_on_cron and is_automated)
     if should_summarize and new_train_total == 0 and notify_summary_fn is not None:
         try:
+            notify_summary_fn(active, silent=silent_now)
+        except TypeError:
+            # Older test fakes don't accept silent kwarg
             notify_summary_fn(active)
         except Exception as e:
             log.exception("summary notify failed: %s", e)
@@ -151,6 +170,8 @@ def _process_watch(
     notify_reserve_success_fn: ReserveSuccessFn | None = None,
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
     schedule_reminders_fn: ScheduleRemindersFn | None = None,
+    allow_waiting: bool = False,
+    silent: bool = False,
 ) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
@@ -164,38 +185,65 @@ def _process_watch(
         return 0
 
     log.info("[%s] watch %s: %d new seat(s)", provider.name, watch.id, len(new_trains))
-    notify_fn(watch, new_trains)
+    try:
+        notify_fn(watch, new_trains, silent=silent)
+    except TypeError:
+        notify_fn(watch, new_trains)
     state_mod.add_notified_ids(state, watch.id, [t.raw_id for t in new_trains])
 
     if watch.auto_reserve:
-        target = new_trains[0]
-        try:
-            reservation = provider.reserve(target, watch.passengers)
+        # Try up to MAX_RESERVE_CANDIDATES trains in case earlier candidates
+        # got snatched between our search and the reserve call (anti-bot
+        # macros / faster bots / human race wins). Stop on first success.
+        candidates = new_trains[:MAX_RESERVE_CANDIDATES]
+        reservation: Reservation | None = None
+        chosen: Train | None = None
+        last_err: tuple[Train, Exception] | None = None
+        for candidate in candidates:
+            try:
+                r = provider.reserve(
+                    candidate, watch.passengers, allow_waiting=allow_waiting,
+                )
+                reservation = r
+                chosen = candidate
+                break
+            except Exception as e:
+                last_err = (candidate, e)
+                log.info(
+                    "[%s] watch %s: reserve %s failed (%s); trying next candidate",
+                    provider.name, watch.id, candidate.train_no, e,
+                )
+
+        if reservation is not None and chosen is not None:
             if reservation.already_existed:
-                # Same train was already reserved (typically a previous run
-                # reserved it but state.json commit didn't propagate before
-                # this run started). Don't spam another success notification.
                 log.info(
                     "[%s] watch %s: train %s already reserved — skipping notify",
-                    provider.name, watch.id, target.train_no,
+                    provider.name, watch.id, chosen.train_no,
                 )
             else:
+                kind = "standby" if reservation.is_standby else "reserved"
                 log.info(
-                    "[%s] watch %s: reserved %s (id=%s)",
-                    provider.name, watch.id, target.train_no, reservation.reservation_id,
+                    "[%s] watch %s: %s %s (id=%s)",
+                    provider.name, watch.id, kind, chosen.train_no, reservation.reservation_id,
                 )
                 if notify_reserve_success_fn is not None:
-                    notify_reserve_success_fn(watch, target, reservation)
-                if schedule_reminders_fn is not None:
+                    notify_reserve_success_fn(watch, chosen, reservation)
+                if schedule_reminders_fn is not None and not reservation.is_standby:
+                    # Standby has no payment deadline yet — reminders kick in
+                    # only after assignment via a separate notification.
                     try:
-                        schedule_reminders_fn(watch, target, reservation)
+                        schedule_reminders_fn(watch, chosen, reservation)
                     except Exception as e:
                         log.exception("schedule_reminders failed for %s: %s", reservation.reservation_id, e)
-        except Exception as e:
-            log.exception("[%s] watch %s: reserve failed for train %s: %s", provider.name, watch.id, target.train_no, e)
+        elif last_err is not None:
+            target, err = last_err
+            log.exception(
+                "[%s] watch %s: all %d reserve candidates failed; last error on %s: %s",
+                provider.name, watch.id, len(candidates), target.train_no, err,
+            )
             if notify_reserve_failure_fn is not None:
                 try:
-                    notify_reserve_failure_fn(watch, target, str(e))
+                    notify_reserve_failure_fn(watch, target, str(err))
                 except Exception as nfx:
                     log.exception("reserve-failure notify itself failed: %s", nfx)
 

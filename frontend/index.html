@@ -113,6 +113,34 @@
           <span class="toggle__track"><span class="toggle__thumb"></span></span>
         </label>
       </div>
+
+      <div class="setting-row">
+        <div class="setting-row__main">
+          <span class="setting-row__title">대기예약 자동 등록</span>
+          <span class="setting-row__hint">매진 좌석에 대해 코레일 try_waiting / SRT reserve_standby로 대기 등록. 다른 사람이 결제 안 하면 자동 배정. 임시예약과 동시 진행 가능.</span>
+        </div>
+        <label class="toggle">
+          <input class="toggle__input" type="checkbox" id="allow-waiting-toggle" aria-label="대기예약 자동 등록">
+          <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="setting-row setting-row--col">
+        <div class="setting-row__main">
+          <span class="setting-row__title">조용한 시간 (KST)</span>
+          <span class="setting-row__hint">이 시간대에는 cron 알림을 무음으로 전송. 수동(지금 확인) / 임시예약 성공·실패 / 결제 마감 reminder는 항상 소리 알림. 비워두면 항상 소리.</span>
+        </div>
+        <div class="setting-row__inline">
+          <label class="quiet-time">
+            <span class="field__label">시작</span>
+            <input class="field__input field__input--mono" type="time" id="quiet-start" />
+          </label>
+          <label class="quiet-time">
+            <span class="field__label">종료</span>
+            <input class="field__input field__input--mono" type="time" id="quiet-end" />
+          </label>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="runs-panel">

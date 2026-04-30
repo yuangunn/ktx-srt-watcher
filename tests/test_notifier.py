@@ -292,6 +292,68 @@ class FakeHttpSession:
         return self.response
 
 
+class TestQuietHourKst:
+    def test_disabled_when_either_endpoint_missing(self):
+        assert notifier.is_quiet_hour_kst("2026-04-30T15:00:00Z", None, "07:00") is False
+        assert notifier.is_quiet_hour_kst("2026-04-30T15:00:00Z", "23:00", None) is False
+        assert notifier.is_quiet_hour_kst("2026-04-30T15:00:00Z", "", "") is False
+
+    def test_simple_window_without_midnight_wrap(self):
+        # 12:00–14:00 KST. UTC 03:00 = KST 12:00 (start, inclusive)
+        assert notifier.is_quiet_hour_kst("2026-04-30T03:00:00Z", "12:00", "14:00") is True
+        # UTC 04:59 = KST 13:59 (still inside)
+        assert notifier.is_quiet_hour_kst("2026-04-30T04:59:00Z", "12:00", "14:00") is True
+        # UTC 05:00 = KST 14:00 (end, exclusive)
+        assert notifier.is_quiet_hour_kst("2026-04-30T05:00:00Z", "12:00", "14:00") is False
+
+    def test_window_wrapping_midnight(self):
+        # 23:00–07:00 KST quiet window
+        # UTC 14:00 = KST 23:00 → quiet
+        assert notifier.is_quiet_hour_kst("2026-04-30T14:00:00Z", "23:00", "07:00") is True
+        # UTC 17:00 = KST 02:00 → quiet
+        assert notifier.is_quiet_hour_kst("2026-04-30T17:00:00Z", "23:00", "07:00") is True
+        # UTC 22:00 = KST 07:00 → not quiet (end exclusive)
+        assert notifier.is_quiet_hour_kst("2026-04-30T22:00:00Z", "23:00", "07:00") is False
+        # UTC 03:00 = KST 12:00 → not quiet
+        assert notifier.is_quiet_hour_kst("2026-04-30T03:00:00Z", "23:00", "07:00") is False
+
+    def test_zero_length_window_disabled(self):
+        assert notifier.is_quiet_hour_kst("2026-04-30T17:00:00Z", "08:00", "08:00") is False
+
+    def test_malformed_time_strings_disabled(self):
+        assert notifier.is_quiet_hour_kst("2026-04-30T17:00:00Z", "garbage", "07:00") is False
+        assert notifier.is_quiet_hour_kst("2026-04-30T17:00:00Z", "23:00", "25:99") is False
+
+
+class TestSendTelegramSilent:
+    def test_silent_adds_disable_notification(self, monkeypatch):
+        session = FakeSession()
+        notifier.send_telegram("T", "C", "hi", session=session, silent=True)
+        assert session.calls[0]["json"]["disable_notification"] is True
+
+    def test_default_does_not_add_disable_notification(self, monkeypatch):
+        session = FakeSession()
+        notifier.send_telegram("T", "C", "hi", session=session)
+        assert "disable_notification" not in session.calls[0]["json"]
+
+
+class TestStandbyReservationFormat:
+    def test_standby_uses_different_headline(self):
+        import re
+        from worker.models import Reservation
+        rsv = Reservation(
+            provider="korail", reservation_id="W-12345",
+            train_no="045", expires_at=None, is_standby=True,
+        )
+        msg = notifier.format_reservation_success(_watch(), _train(), rsv)
+        assert "대기예약" in msg
+        assert "⏳" in msg
+        assert "임시예약 성공" not in msg
+        # No concrete "결제 마감 HH:MM" deadline line for standby
+        assert not re.search(r"결제 마감 \d{2}:\d{2}", msg)
+        assert "W-12345" in msg
+
+
 class TestScheduleReminders:
     def test_skipped_when_cf_url_missing(self, monkeypatch):
         monkeypatch.delenv("CF_WORKER_URL", raising=False)

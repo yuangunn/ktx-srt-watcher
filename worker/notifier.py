@@ -41,21 +41,40 @@ def format_message(watch: Watch, trains: list[Train]) -> str:
     return "\n".join(lines)
 
 
-def send_telegram(bot_token: str, chat_id: str, text: str, *, session: _PostSession | None = None) -> None:
+def send_telegram(
+    bot_token: str,
+    chat_id: str,
+    text: str,
+    *,
+    session: _PostSession | None = None,
+    silent: bool = False,
+) -> None:
+    """Post a message to Telegram.  When `silent`, sets disable_notification
+    so the message arrives without a sound on the user's device — used
+    during quiet hours for non-urgent alerts.  Reservation success/failure
+    and payment-deadline reminders ignore this and always ring."""
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    payload: dict = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if silent:
+        payload["disable_notification"] = True
     sess = session if session is not None else requests
     resp = sess.post(url, json=payload, timeout=10)
     resp.raise_for_status()
 
 
-def notify(watch: Watch, trains: list[Train], *, session: _PostSession | None = None) -> None:
+def notify(
+    watch: Watch,
+    trains: list[Train],
+    *,
+    session: _PostSession | None = None,
+    silent: bool = False,
+) -> None:
     if not trains:
         return
     bot_token = _require_env("TELEGRAM_BOT_TOKEN")
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_message(watch, trains)
-    send_telegram(bot_token, chat_id, text, session=session)
+    send_telegram(bot_token, chat_id, text, session=session, silent=silent)
 
 
 def format_summary(watches: list[Watch]) -> str:
@@ -68,16 +87,34 @@ def format_summary(watches: list[Watch]) -> str:
     return "\n".join(lines)
 
 
-def notify_summary(watches: list[Watch], *, session: _PostSession | None = None) -> None:
+def notify_summary(
+    watches: list[Watch],
+    *,
+    session: _PostSession | None = None,
+    silent: bool = False,
+) -> None:
     bot_token = _require_env("TELEGRAM_BOT_TOKEN")
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_summary(watches)
-    send_telegram(bot_token, chat_id, text, session=session)
+    send_telegram(bot_token, chat_id, text, session=session, silent=silent)
 
 
 def format_reservation_success(watch: Watch, train: Train, reservation: Reservation) -> str:
-    deadline = _fmt_deadline(reservation.expires_at)
     app_name = "코레일톡" if watch.provider == "korail" else "SR 앱"
+    if reservation.is_standby:
+        return (
+            f"⏳ 대기예약 등록\n"
+            f"\n"
+            f"{watch.from_}→{watch.to} {watch.date}\n"
+            f"{train.dep_time} 발 {train.train_type} {train.train_no}\n"
+            f"\n"
+            f"예약번호 {reservation.reservation_id}\n"
+            f"\n"
+            f"매진 → 대기예약 등록 완료. 다른 사람이 결제 안 하면 자동 배정됩니다.\n"
+            f"배정되면 결제 마감 시각이 정해지고 별도 알림이 옵니다.\n"
+            f"진행 상태는 {app_name}에서 확인 가능."
+        )
+    deadline = _fmt_deadline(reservation.expires_at)
     return (
         f"✅ 임시예약 성공\n"
         f"\n"
@@ -149,6 +186,45 @@ def _fmt_deadline(iso: str | None) -> str:
             return iso.split("T")[1][:5]
         except (IndexError, AttributeError):
             return iso
+
+
+def is_quiet_hour_kst(now_iso: str, start_hhmm: str | None, end_hhmm: str | None) -> bool:
+    """True if now (parsed from ISO) falls inside the user's quiet window
+    in KST.  Window can wrap midnight (e.g. start=23:00, end=07:00).
+    Empty/missing start or end disables the check."""
+    if not start_hhmm or not end_hhmm:
+        return False
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    kst = dt.astimezone(timezone(timedelta(hours=9)))
+    now_min = kst.hour * 60 + kst.minute
+    start_min = _parse_hhmm(start_hhmm)
+    end_min = _parse_hhmm(end_hhmm)
+    if start_min is None or end_min is None:
+        return False
+    if start_min == end_min:
+        return False  # zero-length window
+    if start_min < end_min:
+        return start_min <= now_min < end_min
+    # Wraps midnight
+    return now_min >= start_min or now_min < end_min
+
+
+def _parse_hhmm(s: str) -> int | None:
+    try:
+        h, m = s.split(":")
+        h_i, m_i = int(h), int(m)
+        if 0 <= h_i < 24 and 0 <= m_i < 60:
+            return h_i * 60 + m_i
+    except (ValueError, AttributeError):
+        pass
+    return None
 
 
 def _require_env(name: str) -> str:

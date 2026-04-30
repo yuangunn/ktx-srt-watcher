@@ -68,7 +68,13 @@ class SRTProvider:
             result.append(t)
         return result
 
-    def reserve(self, train: Train, passengers: Passengers) -> Reservation:
+    def reserve(
+        self,
+        train: Train,
+        passengers: Passengers,
+        *,
+        allow_waiting: bool = False,
+    ) -> Reservation:
         if self._client is None:
             raise RuntimeError("SRTProvider.reserve called before login")
         raw = train._raw
@@ -79,6 +85,7 @@ class SRTProvider:
             )
         psgr = _build_passengers(passengers)
         seat_type = _seat_type(train.seat_class)
+        is_standby = False
         try:
             rsv = self._client.reserve(raw, passengers=psgr, special_seat=seat_type)
         except (SRTResponseError, SRTNotLoggedInError) as e:
@@ -91,15 +98,30 @@ class SRTProvider:
                     booking_url=SRAIL_BOOKING,
                     already_existed=True,
                 )
-            raise RuntimeError(f"SRT 예약 오류: {e}") from e
+            if allow_waiting and _is_soldout_error(e):
+                try:
+                    rsv = self._client.reserve_standby(
+                        raw, passengers=psgr, special_seat=seat_type,
+                    )
+                    is_standby = True
+                except (SRTResponseError, SRTNotLoggedInError) as e2:
+                    raise RuntimeError(f"SRT 매진 (대기예약도 불가): {e2}") from e2
+            else:
+                raise RuntimeError(f"SRT 예약 오류: {e}") from e
 
         return Reservation(
             provider="srt",
             reservation_id=str(getattr(rsv, "reservation_number", "") or rsv),
             train_no=train.train_no,
-            expires_at=_srt_deadline_iso(rsv),
+            expires_at=None if is_standby else _srt_deadline_iso(rsv),
             booking_url=SRAIL_BOOKING,
+            is_standby=is_standby,
         )
+
+
+def _is_soldout_error(e: Exception) -> bool:
+    msg = str(e)
+    return any(kw in msg for kw in ("매진", "잔여석", "예약가능", "sold out", "sold_out"))
 
 
 def _srt_deadline_iso(rsv) -> str:

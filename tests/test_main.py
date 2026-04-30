@@ -56,15 +56,19 @@ class FakeProvider:
         raise_on_search: Exception | None = None,
         reserve_result=None,
         raise_on_reserve: Exception | None = None,
+        reserve_per_train: dict | None = None,
     ):
         self.name = name
         self.logged_in_with: tuple[str, str] | None = None
         self.searches: list[Watch] = []
-        self.reserve_calls: list[tuple[Train, object]] = []
+        self.reserve_calls: list[tuple[Train, object, dict]] = []
         self._results = search_results
         self._raise = raise_on_search
         self._reserve_result = reserve_result
         self._reserve_raise = raise_on_reserve
+        # Optional: map of train_no → result-or-exception, lets a single
+        # FakeProvider succeed/fail per candidate for multi-train tests.
+        self._reserve_per_train = reserve_per_train or {}
 
     def login(self, user_id: str, password: str) -> None:
         self.logged_in_with = (user_id, password)
@@ -77,8 +81,13 @@ class FakeProvider:
             return self._results(watch)
         return list(self._results or [])
 
-    def reserve(self, train: Train, passengers) -> Reservation:
-        self.reserve_calls.append((train, passengers))
+    def reserve(self, train: Train, passengers, *, allow_waiting: bool = False) -> Reservation:
+        self.reserve_calls.append((train, passengers, {"allow_waiting": allow_waiting}))
+        if train.train_no in self._reserve_per_train:
+            v = self._reserve_per_train[train.train_no]
+            if isinstance(v, Exception):
+                raise v
+            return v
         if self._reserve_raise:
             raise self._reserve_raise
         if self._reserve_result:
@@ -383,6 +392,205 @@ class TestManualTriggerSummary:
         assert summary_calls == []
 
 
+class TestMultiTrainFallback:
+    def test_first_candidate_success_skips_others(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        ok = Reservation(provider="korail", reservation_id="ABC", train_no="045")
+        korail = FakeProvider(
+            "korail",
+            search_results=[
+                _train(train_no="045", raw_id="r1"),
+                _train(train_no="047", raw_id="r2"),
+            ],
+            reserve_per_train={"045": ok},
+        )
+        success_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        # Only the first train was attempted
+        assert len(korail.reserve_calls) == 1
+        assert korail.reserve_calls[0][0].train_no == "045"
+        assert success_calls[0][1].train_no == "045"
+
+    def test_falls_back_to_second_candidate_on_first_failure(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        ok = Reservation(provider="korail", reservation_id="ABC", train_no="047")
+        korail = FakeProvider(
+            "korail",
+            search_results=[
+                _train(train_no="045", raw_id="r1"),
+                _train(train_no="047", raw_id="r2"),
+            ],
+            reserve_per_train={
+                "045": RuntimeError("좌석 매진"),
+                "047": ok,
+            },
+        )
+        success_calls: list = []
+        failure_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            notify_reserve_failure_fn=lambda *a: failure_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.reserve_calls) == 2
+        assert success_calls[0][1].train_no == "047"
+        # No failure notification when fallback succeeded
+        assert failure_calls == []
+
+    def test_caps_attempts_at_three(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        # 5 candidates all fail; only first 3 should be attempted
+        korail = FakeProvider(
+            "korail",
+            search_results=[
+                _train(train_no="045", raw_id="r1"),
+                _train(train_no="047", raw_id="r2"),
+                _train(train_no="049", raw_id="r3"),
+                _train(train_no="051", raw_id="r4"),
+                _train(train_no="053", raw_id="r5"),
+            ],
+            reserve_per_train={
+                tn: RuntimeError("좌석 매진") for tn in ["045", "047", "049", "051", "053"]
+            },
+        )
+        failure_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_failure_fn=lambda *a: failure_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.reserve_calls) == 3  # capped
+        assert len(failure_calls) == 1
+        # Failure reported on the *last* attempted train
+        assert failure_calls[0][1].train_no == "049"
+
+    def test_passes_allow_waiting_through(self):
+        cfg = {
+            "version": 1,
+            "settings": {"allow_waiting_list": True},
+            "watches": [_watch_dict(id="w", auto_reserve=True)],
+        }
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+        )
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert len(korail.reserve_calls) == 1
+        assert korail.reserve_calls[0][2]["allow_waiting"] is True
+
+    def test_allow_waiting_default_false(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert korail.reserve_calls[0][2]["allow_waiting"] is False
+
+
+class TestQuietHoursPropagation:
+    def test_silent_when_in_quiet_window_and_automated(self):
+        cfg = {
+            "version": 1,
+            "settings": {"quiet_hours_start": "23:00", "quiet_hours_end": "07:00"},
+            "watches": [_watch_dict(id="w")],
+        }
+
+        class Recorder:
+            def __init__(self):
+                self.calls = []
+            def __call__(self, watch, trains, *, silent=False):
+                self.calls.append({"silent": silent})
+
+        rec = Recorder()
+        # UTC 17:00 = KST 02:00 (inside the quiet window)
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=rec,
+            now_iso="2026-04-30T17:00:00Z",
+            event_name="repository_dispatch",
+        )
+        assert rec.calls and rec.calls[0]["silent"] is True
+
+    def test_loud_outside_quiet_window(self):
+        cfg = {
+            "version": 1,
+            "settings": {"quiet_hours_start": "23:00", "quiet_hours_end": "07:00"},
+            "watches": [_watch_dict(id="w")],
+        }
+
+        class Recorder:
+            def __init__(self): self.calls = []
+            def __call__(self, watch, trains, *, silent=False):
+                self.calls.append({"silent": silent})
+
+        rec = Recorder()
+        # UTC 03:00 = KST 12:00 (outside the window)
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=rec,
+            now_iso="2026-04-30T03:00:00Z",
+            event_name="repository_dispatch",
+        )
+        assert rec.calls and rec.calls[0]["silent"] is False
+
+    def test_manual_trigger_overrides_quiet_hours(self):
+        cfg = {
+            "version": 1,
+            "settings": {"quiet_hours_start": "23:00", "quiet_hours_end": "07:00"},
+            "watches": [_watch_dict(id="w")],
+        }
+
+        class Recorder:
+            def __init__(self): self.calls = []
+            def __call__(self, watch, trains, *, silent=False):
+                self.calls.append({"silent": silent})
+
+        rec = Recorder()
+        # Inside the quiet window, but workflow_dispatch should override
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=rec,
+            now_iso="2026-04-30T17:00:00Z",
+            event_name="workflow_dispatch",
+        )
+        assert rec.calls and rec.calls[0]["silent"] is False
+
+
 class TestPollInterval:
     def test_skip_when_within_interval(self):
         cfg = {
@@ -623,6 +831,33 @@ class TestScheduleReminders:
             now_iso="t",
             event_name="repository_dispatch",
         )
+        assert sched_calls == []
+
+    def test_does_not_schedule_reminders_for_standby(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        standby = Reservation(
+            provider="korail", reservation_id="W-1", train_no="045",
+            is_standby=True, expires_at=None,
+        )
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=standby,
+        )
+        sched_calls: list = []
+        success_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_reserve_success_fn=lambda *a: success_calls.append(a),
+            schedule_reminders_fn=lambda *a: sched_calls.append(a),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        # Success notification yes, but no payment-deadline reminders for standby
+        assert len(success_calls) == 1
         assert sched_calls == []
 
     def test_schedule_failure_does_not_crash_run(self):

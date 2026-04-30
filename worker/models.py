@@ -98,3 +98,9 @@ class Reservation(BaseModel):
     # success notification (we already sent one when the original reserve
     # landed) without treating the run as a failure.
     already_existed: bool = False
+    # True when this is a 대기예약 (standby) registration rather than a
+    # confirmed temporary reservation. Korail uses try_waiting=True; SRT
+    # uses reserve_standby(). Triggered as a fallback when the primary
+    # reserve attempt hit a sold-out condition AND the user opted in via
+    # settings.allow_waiting_list.
+    is_standby: bool = False

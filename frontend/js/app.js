@@ -529,15 +529,17 @@ class App {
   }
 
   _renderSettings() {
+    const s = this.config.settings || {};
     const toggle = $('#notify-empty-toggle');
-    if (toggle) {
-      toggle.checked = !!(this.config.settings?.notify_empty_on_cron);
-    }
+    if (toggle) toggle.checked = !!s.notify_empty_on_cron;
+    const wait = $('#allow-waiting-toggle');
+    if (wait) wait.checked = !!s.allow_waiting_list;
     const select = $('#poll-interval-select');
-    if (select) {
-      const v = this.config.settings?.poll_interval_min ?? 0;
-      select.value = String(v);
-    }
+    if (select) select.value = String(s.poll_interval_min ?? 0);
+    const qs = $('#quiet-start');
+    const qe = $('#quiet-end');
+    if (qs) qs.value = s.quiet_hours_start || '';
+    if (qe) qe.value = s.quiet_hours_end || '';
   }
 
   async _loadRuns() {
@@ -590,25 +592,43 @@ class App {
   }
 
   _wireSettings() {
+    const ensure = () => {
+      if (!this.config.settings) this.config.settings = {};
+      return this.config.settings;
+    };
     const toggle = $('#notify-empty-toggle');
     if (toggle) {
       toggle.addEventListener('change', async () => {
-        const enabled = toggle.checked;
-        if (!this.config.settings) this.config.settings = {};
-        this.config.settings.notify_empty_on_cron = enabled;
-        await this._save(`settings: notify_empty_on_cron = ${enabled}`);
+        ensure().notify_empty_on_cron = toggle.checked;
+        await this._save(`settings: notify_empty_on_cron = ${toggle.checked}`);
+      });
+    }
+    const wait = $('#allow-waiting-toggle');
+    if (wait) {
+      wait.addEventListener('change', async () => {
+        ensure().allow_waiting_list = wait.checked;
+        await this._save(`settings: allow_waiting_list = ${wait.checked}`);
       });
     }
     const select = $('#poll-interval-select');
     if (select) {
       select.addEventListener('change', async () => {
         const v = parseInt(select.value, 10) || 0;
-        if (!this.config.settings) this.config.settings = {};
-        this.config.settings.poll_interval_min = v;
+        ensure().poll_interval_min = v;
         await this._save(`settings: poll_interval_min = ${v}`);
         this._startCountdown();
       });
     }
+    const qs = $('#quiet-start');
+    const qe = $('#quiet-end');
+    const persistQuiet = async () => {
+      const settings = ensure();
+      settings.quiet_hours_start = qs?.value || '';
+      settings.quiet_hours_end = qe?.value || '';
+      await this._save(`settings: quiet_hours = ${settings.quiet_hours_start || '–'}..${settings.quiet_hours_end || '–'}`);
+    };
+    if (qs) qs.addEventListener('change', persistQuiet);
+    if (qe) qe.addEventListener('change', persistQuiet);
   }
   _wireLogSheet() {
     const dialog = $('#log-sheet');

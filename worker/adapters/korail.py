@@ -81,7 +81,13 @@ class KorailProvider:
             result.append(t)
         return result
 
-    def reserve(self, train: Train, passengers: Passengers) -> Reservation:
+    def reserve(
+        self,
+        train: Train,
+        passengers: Passengers,
+        *,
+        allow_waiting: bool = False,
+    ) -> Reservation:
         if self._client is None:
             raise RuntimeError("KorailProvider.reserve called before login")
         raw = train._raw
@@ -92,17 +98,23 @@ class KorailProvider:
             )
         psgr = _build_passengers(passengers)
         option = _reserve_option(train.seat_class)
+        is_standby = False
         try:
             rsv = self._client.reserve(raw, passengers=psgr, option=option)
         except SoldOutError as e:
-            raise RuntimeError(f"좌석 매진: {e}") from e
+            if not allow_waiting:
+                raise RuntimeError(f"좌석 매진: {e}") from e
+            # 대기예약 fallback: register the user on the standby list so
+            # if anyone abandons their hold, the seat comes to us.
+            try:
+                rsv = self._client.reserve(
+                    raw, passengers=psgr, option=option, try_waiting=True,
+                )
+                is_standby = True
+            except (SoldOutError, KorailError) as e2:
+                raise RuntimeError(f"좌석 매진 (대기예약도 불가): {e2}") from e2
         except KorailError as e:
             if _is_duplicate_reservation_error(e):
-                # User already has a hold on this exact train (typically
-                # because we reserved it in a previous run but state.json
-                # didn't get committed in time, so this run thought the
-                # train was new again). Treat as silent success — main.py
-                # will suppress the success notification.
                 return Reservation(
                     provider="korail",
                     reservation_id="(기존)",
@@ -117,8 +129,9 @@ class KorailProvider:
             provider="korail",
             reservation_id=str(getattr(rsv, "rsv_id", "") or rsv),
             train_no=train.train_no,
-            expires_at=_korail_deadline_iso(rsv),
+            expires_at=None if is_standby else _korail_deadline_iso(rsv),
             booking_url=LETSKORAIL_BOOKING,
+            is_standby=is_standby,
         )
 
 
