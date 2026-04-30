@@ -1,8 +1,13 @@
 {
-  "last_run": "2026-04-30T07:19:09Z",
+  "last_run": "2026-04-30T07:44:46Z",
   "watches": {
     "seoul-busan-20260515-am": {
-      "last_check": "2026-04-30T07:19:09Z",
+      "last_check": "2026-04-30T07:44:46Z",
+      "notified_train_ids": [],
+      "watch_date": "2026-05-15"
+    },
+    "suseo-dongdaegu-20260515-pm": {
+      "last_check": "2026-04-30T07:44:46Z",
       "notified_train_ids": [],
       "watch_date": "2026-05-15"
     }
