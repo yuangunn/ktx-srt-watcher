@@ -1,5 +1,6 @@
-korail2>=0.4.0
+korail2 @ git+https://github.com/chasehuh/korail2.git@32c4321b9b0838e4d83084c87a9a721076e8a08a
 SRTrain>=2.6.7
 requests>=2.31.0
 pydantic>=2.5.0
 pytest>=8.0.0
+python-dotenv>=1.0.0
