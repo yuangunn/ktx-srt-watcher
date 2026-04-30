@@ -348,12 +348,11 @@ function renderRunRow(run, onOpen) {
   return node;
 }
 
-// Trim a GitHub Actions raw log blob to just the "Run watcher" step output.
-// Format: each line begins with an ISO timestamp, e.g.
-//   2026-04-30T08:31:57.6586123Z 2026-04-30 17:31:57,658 INFO ...
-// Step boundaries are marked by "##[group]" lines that contain the step's
-// run command. We slice from the watcher's group to the next ##[group] or
-// the end. Strips the leading ISO timestamp from each line for readability.
+// Trim a GitHub Actions raw log blob to just the *python stdout* of the
+// "Run watcher" step. Skips the noisy `env:` / `shell:` setup block that
+// GitHub injects at the start of every step group, so the modal shows
+// the actual worker log lines (or the early-exit "skip run" line on
+// throttled invocations) instead of a wall of masked secrets.
 function extractWatcherStep(logsText) {
   if (!logsText) return '';
   const lines = logsText.split('\n');
@@ -368,10 +367,25 @@ function extractWatcherStep(logsText) {
     }
   }
   if (start === -1) {
-    // Fallback: just return the last 200 lines stripped of timestamps
-    return lines.slice(-200).map(stripIsoTimestamp).join('\n');
+    return lines.slice(-200).map(stripIsoTimestamp).filter(Boolean).join('\n');
   }
-  return lines.slice(start, end).map(stripIsoTimestamp).filter(Boolean).join('\n');
+  // Skip command echo + env block: trim to after the first ##[endgroup]
+  // that closes the step's setup header.
+  let actualStart = start;
+  for (let i = start; i < end; i++) {
+    if (/##\[endgroup\]/.test(lines[i])) {
+      actualStart = i + 1;
+      break;
+    }
+  }
+  return lines.slice(actualStart, end).map(stripIsoTimestamp).filter(Boolean).join('\n');
+}
+
+// True when the watcher exited early because the user-set poll_interval_min
+// hadn't elapsed yet. Used to surface a banner in the log dialog so the
+// user understands why no train data is shown.
+function isSkippedByInterval(watcherText) {
+  return /skip run: \d+s since last_run/.test(watcherText || '');
 }
 
 function stripIsoTimestamp(line) {
@@ -606,7 +620,10 @@ class App {
       }
       const logs = await this.gh.getJobLogs(jobs[0].id);
       const watcher = extractWatcherStep(logs);
-      content.textContent = watcher || '워커 로그가 비어 있습니다.';
+      const banner = isSkippedByInterval(watcher)
+        ? '⏭️  폴링 간격 필터로 실제 조회를 건너뛴 실행입니다.\n     직전 실제 실행에서 좌석 결과를 확인하세요.\n\n'
+        : '';
+      content.textContent = banner + (watcher || '워커 로그가 비어 있습니다.');
       content.scrollTop = content.scrollHeight;
     } catch (e) {
       if (this._isAuthError(e)) {
