@@ -460,6 +460,7 @@ class App {
     this._renderWatches();
     this._renderSettings();
     this._loadRuns();
+    this._loadStats();
   }
 
   _parseCronFromWrangler(tomlText) {
@@ -566,6 +567,86 @@ class App {
       li.className = 'run-list--empty';
       li.textContent = `실행 목록 로드 실패 — ${e.message}`;
       list.appendChild(li);
+    }
+  }
+
+  async _loadStats() {
+    const panel = $('#stats-panel');
+    const grid = $('#stats-grid');
+    const chart = $('#stats-chart');
+    if (!panel || !grid || !chart) return;
+    try {
+      // Pull more runs than the recent-runs panel — 100 covers about a
+      // week's worth at 30-min cadence + manual triggers.
+      const runs = await this.gh.listRuns('watch.yml', 100);
+      const now = Date.now();
+      const dayMs = 86_400_000;
+      const week = runs.filter(r => now - new Date(r.started).getTime() < 7 * dayMs);
+      const month = runs.filter(r => now - new Date(r.started).getTime() < 30 * dayMs);
+      const success = week.filter(r => r.conclusion === 'success').length;
+      const failed = week.filter(r => r.conclusion === 'failure').length;
+
+      let notified = 0;
+      const watches = this.state?.watches || {};
+      for (const w of Object.values(watches)) {
+        notified += (w.notified_train_ids || []).length;
+      }
+      const activeWatches = (this.config.watches || []).filter(w => w.active !== false).length;
+
+      // 7-day buckets: index 0 = 6 days ago, index 6 = today
+      const buckets = Array.from({ length: 7 }, () => ({ count: 0, failed: 0 }));
+      for (const r of week) {
+        const ageDays = Math.floor((now - new Date(r.started).getTime()) / dayMs);
+        if (ageDays < 7) {
+          const idx = 6 - ageDays;
+          buckets[idx].count++;
+          if (r.conclusion === 'failure') buckets[idx].failed++;
+        }
+      }
+      const maxCount = Math.max(1, ...buckets.map(b => b.count));
+      const dayLabels = ['일','월','화','수','목','금','토'];
+
+      grid.innerHTML = `
+        <div class="stat">
+          <div class="stat__num">${week.length}</div>
+          <div class="stat__label">최근 7일 실행</div>
+          <div class="stat__sub">성공 ${success}${failed ? ` · 실패 ${failed}` : ''}</div>
+        </div>
+        <div class="stat">
+          <div class="stat__num">${month.length}</div>
+          <div class="stat__label">최근 30일</div>
+        </div>
+        <div class="stat">
+          <div class="stat__num">${notified}</div>
+          <div class="stat__label">누적 알림 좌석</div>
+        </div>
+        <div class="stat">
+          <div class="stat__num">${activeWatches}</div>
+          <div class="stat__label">활성 워치</div>
+        </div>
+      `;
+
+      chart.innerHTML = buckets.map((b, i) => {
+        const h = Math.max(4, Math.round((b.count / maxCount) * 100));
+        const dayOfWeek = new Date(now - (6 - i) * dayMs).getDay();
+        const isToday = i === 6;
+        const failed = b.failed > 0 ? '1' : '0';
+        const title = `${b.count}회${b.failed ? ` (${b.failed} 실패)` : ''}`;
+        return `<div class="stats-bar" data-today="${isToday ? '1' : '0'}" style="--h: ${h}%" title="${title}">
+            <div class="stats-bar__fill" data-failed="${failed}"></div>
+            <div class="stats-bar__label">${dayLabels[dayOfWeek]}</div>
+          </div>`;
+      }).join('');
+
+      panel.hidden = false;
+    } catch (e) {
+      if (this._isAuthError(e)) {
+        this._handleAuthFailure();
+        return;
+      }
+      // Silent fail — stats panel stays hidden
+      panel.hidden = true;
+      console.warn('stats load failed', e);
     }
   }
 
