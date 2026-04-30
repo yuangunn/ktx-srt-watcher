@@ -23,6 +23,8 @@ export default {
       ctx.waitUntil(heartbeatCheck(env));
     } else if (event.cron === "0 0 * * *") {
       ctx.waitUntil(checkPATExpiration(env));
+    } else if (event.cron === "0 12 * * SUN") {
+      ctx.waitUntil(weeklySummary(env));
     }
   },
 
@@ -309,6 +311,94 @@ async function checkPATExpiration(env) {
       `2. \`cd cloudflare-worker && npx wrangler secret put GITHUB_TOKEN\``,
   );
   console.log(`[${new Date().toISOString()}] PAT expiry alert: ${dayLabel}d left`);
+}
+
+// WEEKLY SUMMARY: every Sunday 21:00 KST, send a digest of the last 7
+// days' worth of Actions runs grouped by event and the current state
+// snapshot. Doubles as a "system is alive" signal — silence on Sunday
+// evening means the bridge died.
+async function weeklySummary(env) {
+  const sinceIso = new Date(Date.now() - 7 * 86_400_000)
+    .toISOString().slice(0, 10);
+
+  // Fetch up to 100 most recent runs filtered by created date.  GitHub
+  // tops out at 100 per page; for a 30-min cadence we get max 7*48=336
+  // runs/week, but the dominant case (with the user's poll-interval
+  // throttle and skip filter) is around 50-150, well within one page.
+  let runs = [];
+  try {
+    const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/runs?per_page=100&created=%3E%3D${sinceIso}`;
+    const res = await fetch(url, { headers: ghHeaders(env) });
+    if (res.ok) {
+      const data = await res.json();
+      runs = data.workflow_runs || [];
+    }
+  } catch (e) {
+    console.error(`weekly: runs fetch failed: ${e.message}`);
+  }
+
+  const byEvent = {};
+  let success = 0, failure = 0, other = 0;
+  for (const r of runs) {
+    byEvent[r.event] = (byEvent[r.event] || 0) + 1;
+    if (r.conclusion === "success") success++;
+    else if (r.conclusion === "failure") failure++;
+    else other++;
+  }
+
+  // State snapshot for watch count
+  let watchCount = 0;
+  let totalNotified = 0;
+  try {
+    const stateUrl = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/state.json?ref=main`;
+    const res = await fetch(stateUrl, { headers: ghHeaders(env) });
+    if (res.ok) {
+      const meta = await res.json();
+      const decoded = atob(meta.content.replace(/\n/g, ""));
+      const state = JSON.parse(new TextDecoder().decode(
+        Uint8Array.from(decoded, c => c.charCodeAt(0)),
+      ));
+      const watches = state.watches || {};
+      watchCount = Object.keys(watches).length;
+      for (const w of Object.values(watches)) {
+        totalNotified += (w.notified_train_ids || []).length;
+      }
+    }
+  } catch (e) {
+    console.error(`weekly: state.json fetch failed: ${e.message}`);
+  }
+
+  const eventLabel = { schedule: "cron(GHA)", workflow_dispatch: "수동", repository_dispatch: "CF cron", push: "config 변경" };
+  const eventLines = Object.entries(byEvent)
+    .sort((a, b) => b[1] - a[1])
+    .map(([evt, n]) => `  ${eventLabel[evt] || evt}: ${n}회`);
+
+  const lines = [
+    "📊 주간 요약 (지난 7일)",
+    "",
+    `Actions 총 실행: ${runs.length}회`,
+    `  성공: ${success}, 실패: ${failure}${other ? `, 진행 중/취소: ${other}` : ""}`,
+  ];
+  if (eventLines.length) {
+    lines.push("", "이벤트별:", ...eventLines);
+  }
+  lines.push("", `활성 워치: ${watchCount}건`);
+  if (totalNotified > 0) {
+    lines.push(`누적 알림 좌석 ID: ${totalNotified}건`);
+  }
+  lines.push("", "이상 동작 없음 = 시스템 정상.");
+
+  await sendTelegram(env, lines.join("\n"));
+  console.log(`[${new Date().toISOString()}] weekly summary sent (${runs.length} runs, ${watchCount} watches)`);
+}
+
+function ghHeaders(env) {
+  return {
+    Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "ktx-srt-watcher-cf-bridge",
+  };
 }
 
 function text(body, status = 200) {

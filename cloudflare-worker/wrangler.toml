@@ -15,10 +15,14 @@ compatibility_date = "2026-04-30"
 #                     the GitHub-Authentication-Token-Expiration header
 #                     and warns 7 days before the worker's GITHUB_TOKEN
 #                     expires (silently breaking the bridge otherwise)
+#   "0 12 * * SUN"    → weeklySummary: Sunday 12:00 UTC = 21:00 KST.
+#                     Fetches Actions runs from past 7 days + state
+#                     watch count and Telegrams a digest so the user
+#                     knows the system is healthy and how busy it was.
 # Manual "지금 확인" / workflow_dispatch is unaffected. Tighten the */30
 # only when you've moved off GHA free tier or made the repo public.
 [triggers]
-crons = ["*/30 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *"]
+crons = ["*/30 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"
