@@ -615,6 +615,8 @@ hr { border: 0; margin: 0; }
   color: var(--c-on-surface-variant);
 }
 .field__input {
+  width: 100%;
+  min-width: 0;
   height: 48px;
   padding: 0 16px;
   background: var(--c-sc-low);
@@ -695,6 +697,7 @@ hr { border: 0; margin: 0; }
 }
 
 .row { display: grid; gap: var(--s-3); }
+.row > * { min-width: 0; }
 .row--2 { grid-template-columns: 1fr 1fr; }
 .row--3 { grid-template-columns: 1fr 1fr 1fr; }
 
@@ -705,9 +708,11 @@ hr { border: 0; margin: 0; }
   padding: 6px;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
+  min-width: 0;
 }
+.seg > * { min-width: 0; }
 .seg legend {
   padding: 0 6px;
   font-size: 11px;
@@ -763,8 +768,21 @@ hr { border: 0; margin: 0; }
   max-width: 560px;
   max-height: 92dvh;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex; flex-direction: column; gap: var(--s-4);
   animation: sheet-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (max-width: 359px) {
+  .sheet__form {
+    padding: var(--s-4) var(--s-4) calc(var(--s-4) + env(safe-area-inset-bottom));
+    gap: var(--s-3);
+  }
+  .row { gap: var(--s-2); }
+  .seg__opt { padding: 8px 8px; font-size: 12px; }
+  .field__input { padding: 0 12px; font-size: 15px; }
+  .field__input--select { padding-right: 30px; background-position: right 10px center; }
+  .check-chip { padding: 7px 11px; font-size: 12px; }
+  .sheet__form .field__label { font-size: 11px; }
 }
 @keyframes sheet-in {
   from { transform: translateY(20px); opacity: 0.6; }
