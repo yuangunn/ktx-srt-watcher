@@ -2,27 +2,6 @@
   "version": 1,
   "watches": [
     {
-      "id": "seoul-busan-20260515-am",
-      "provider": "korail",
-      "from": "서울",
-      "to": "부산",
-      "date": "2026-05-15",
-      "time_min": "09:00",
-      "time_max": "12:00",
-      "train_types": [
-        "KTX",
-        "KTX-산천"
-      ],
-      "passengers": {
-        "adult": 1,
-        "child": 0,
-        "senior": 0
-      },
-      "seat_class": "general",
-      "auto_reserve": false,
-      "active": true
-    },
-    {
       "id": "suseo-dongdaegu-20260515-pm",
       "provider": "srt",
       "from": "수서",
