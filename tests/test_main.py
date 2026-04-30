@@ -314,6 +314,63 @@ class TestManualTriggerSummary:
             event_name="workflow_dispatch",
         )
 
+    def test_cron_with_notify_empty_setting_sends_summary(self):
+        cfg = {
+            "version": 1,
+            "settings": {"notify_empty_on_cron": True},
+            "watches": [_watch_dict(id="w")],
+        }
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="schedule",
+        )
+        assert len(summary_calls) == 1
+
+    def test_cron_with_notify_empty_setting_skips_summary_when_seats_found(self):
+        cfg = {
+            "version": 1,
+            "settings": {"notify_empty_on_cron": True},
+            "watches": [_watch_dict(id="w")],
+        }
+        korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="schedule",
+        )
+        assert summary_calls == []
+
+    def test_cron_with_setting_disabled_does_not_send(self):
+        cfg = {
+            "version": 1,
+            "settings": {"notify_empty_on_cron": False},
+            "watches": [_watch_dict(id="w")],
+        }
+        korail = FakeProvider("korail", search_results=[])
+        summary_calls: list = []
+        main.run_watches(
+            cfg, state_mod._default(),
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            notify_summary_fn=lambda ws: summary_calls.append(ws),
+            now_iso="t",
+            event_name="schedule",
+        )
+        assert summary_calls == []
+
 
 class TestLoadConfig:
     def test_loads_valid_config(self, tmp_path: Path):

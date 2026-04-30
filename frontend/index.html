@@ -39,7 +39,7 @@
       <ol class="setup__steps">
         <li>GitHub → <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">Settings → Fine-grained tokens</a> → Generate new token</li>
         <li>Repository access: <strong>Only select repositories</strong> → <code>ktx-srt-watcher</code> 선택</li>
-        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong>, <strong>Actions: Write</strong> ("지금 확인" 버튼용)</li>
+        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong>, <strong>Actions: Read and write</strong> ("지금 확인" + 최근 실행 목록용)</li>
         <li>발급된 <code>github_pat_…</code> 문자열을 아래에 붙여 넣기</li>
       </ol>
       <form class="setup__form" id="setup-form" autocomplete="off">
@@ -73,8 +73,33 @@
 
   <hr class="rule rule--dotted" aria-hidden="true">
 
+  <div class="poll-bar" id="poll-bar" aria-live="polite">
+    <span class="poll-bar__interval" id="poll-interval">—</span>
+    <span class="poll-bar__sep" aria-hidden="true">·</span>
+    <span class="poll-bar__countdown" id="poll-countdown">—</span>
+  </div>
+
   <main class="page">
     <section class="watches" id="watches" aria-label="감시 중인 워치"></section>
+
+    <section class="panel" id="settings-panel">
+      <h2 class="panel__title">설정</h2>
+      <div class="setting-row">
+        <div class="setting-row__main">
+          <span class="setting-row__title">빈 결과도 알림</span>
+          <span class="setting-row__hint">cron이 잔여석 0건을 발견해도 텔레그램으로 요약 메시지 전송. 수동(지금 확인)은 토글과 무관하게 항상 알림.</span>
+        </div>
+        <label class="toggle">
+          <input class="toggle__input" type="checkbox" id="notify-empty-toggle" aria-label="빈 결과 알림">
+          <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="runs-panel">
+      <h2 class="panel__title">최근 실행</h2>
+      <ul class="run-list" id="run-list" aria-label="최근 워크플로우 실행"></ul>
+    </section>
   </main>
 
   <button class="fab" id="fab-add" type="button" aria-label="워치 추가">
@@ -207,6 +232,17 @@
     <span class="empty__rail" aria-hidden="true"></span>
     <button class="btn btn--primary" id="empty-add" type="button">첫 워치 추가하기</button>
   </div>
+</template>
+
+<template id="tpl-run-row">
+  <li class="run-row">
+    <span class="run-row__status" data-conclusion="" aria-hidden="true"></span>
+    <div class="run-row__body">
+      <p class="run-row__time mono"></p>
+      <p class="run-row__meta mono"></p>
+    </div>
+    <a class="run-row__link" target="_blank" rel="noopener" aria-label="GitHub Actions에서 보기">↗</a>
+  </li>
 </template>
 
 <script src="./js/app.js" type="module"></script>

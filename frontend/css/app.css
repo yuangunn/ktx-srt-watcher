@@ -170,6 +170,26 @@ hr { border: 0; margin: 0; }
 .rule { height: 0; border-top: 1px solid var(--c-outline-variant); }
 .rule--dotted { border-top-style: dashed; }
 
+/* ---------- poll bar ---------- */
+
+.poll-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px var(--s-5) 0;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--c-on-surface-variant);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  max-width: 720px;
+  margin: 0 auto;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.poll-bar__sep { opacity: 0.5; }
+.poll-bar__countdown { color: var(--c-on-surface); font-feature-settings: 'tnum' 1; }
+
 /* ---------- page / list ---------- */
 
 .page {
@@ -182,6 +202,110 @@ hr { border: 0; margin: 0; }
   flex-direction: column;
   gap: var(--s-4);
   margin-top: var(--s-5);
+}
+
+/* ---------- panels (settings, runs) ---------- */
+
+.panel {
+  background: var(--c-sc-low);
+  border: 1px solid var(--c-outline-variant);
+  border-radius: var(--r-lg);
+  padding: var(--s-3) var(--s-5) var(--s-4);
+  margin-top: var(--s-6);
+}
+.panel__title {
+  font-family: var(--f-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-on-surface-variant);
+  margin: var(--s-2) 0 var(--s-3);
+}
+
+/* ---------- settings ---------- */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
+}
+.setting-row__main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.setting-row__title { font-size: 14px; font-weight: 600; color: var(--c-on-surface); }
+.setting-row__hint {
+  font-size: 12px;
+  color: var(--c-on-surface-variant);
+  line-height: 17px;
+  font-weight: 400;
+}
+
+/* ---------- runs ---------- */
+
+.run-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--c-outline-variant);
+}
+.run-row:last-child { border-bottom: 0; }
+.run-row__status {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--c-outline);
+  flex-shrink: 0;
+}
+.run-row__status[data-conclusion="success"]   { background: #7AA88E; }
+.run-row__status[data-conclusion="failure"]   { background: var(--c-error); }
+.run-row__status[data-conclusion="cancelled"] { background: var(--c-on-surface-variant); }
+.run-row__status[data-conclusion="in_progress"], .run-row__status[data-conclusion=""] {
+  background: var(--c-ember);
+  animation: pulse 1.6s ease-in-out infinite alternate;
+}
+.run-row__body { flex: 1; min-width: 0; }
+.run-row__time {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-on-surface);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-row__meta {
+  font-size: 11px;
+  color: var(--c-on-surface-variant);
+  margin: 2px 0 0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-row__link {
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9999px;
+  color: var(--c-on-surface-variant);
+  text-decoration: none;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.run-row__link:hover { background: var(--c-sc); color: var(--c-on-surface); }
+.run-list--empty {
+  font-size: 12px;
+  color: var(--c-on-surface-variant);
+  font-family: var(--f-mono);
+  padding: 8px 0;
 }
 
 /* ---------- watch card ---------- */

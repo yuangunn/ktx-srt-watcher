@@ -116,6 +116,23 @@ class GitHub {
     if (res.status === 204) return;
     throw new Error(`dispatch ${workflowFile} → ${res.status} ${await res.text()}`);
   }
+  async listRuns(workflowFile, limit = 8) {
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repo}/actions/workflows/${workflowFile}/runs?per_page=${limit}`,
+      { headers: this._headers(), cache: 'no-store' },
+    );
+    if (!res.ok) throw new Error(`list runs → ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return (data.workflow_runs || []).map(r => ({
+      id: r.id,
+      status: r.status,
+      conclusion: r.conclusion,
+      event: r.event,
+      started: r.run_started_at || r.created_at,
+      finished: r.updated_at,
+      url: r.html_url,
+    }));
+  }
 }
 
 function encodeUtf8(s) { return new TextEncoder().encode(s).reduce((a, b) => a + String.fromCharCode(b), ''); }
@@ -212,6 +229,52 @@ function fmtPassengers(p) {
   return parts.join(' / ') || '성인 1';
 }
 
+// Parse a basic "*/N * * * *" cron expr; returns { intervalMin } or null.
+function parseSimpleCron(expr) {
+  const m = String(expr || '').match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+  if (!m) return null;
+  const intervalMin = parseInt(m[1], 10);
+  if (!intervalMin || intervalMin < 1) return null;
+  return { intervalMin };
+}
+
+function nextTickEpoch(intervalMin, now = Date.now()) {
+  const intervalMs = intervalMin * 60 * 1000;
+  return Math.ceil((now + 1) / intervalMs) * intervalMs;
+}
+
+function fmtCountdown(ms) {
+  if (ms <= 0) return '확인 중…';
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `다음 ${min}:${String(sec).padStart(2, '0')} 후`;
+}
+
+function fmtRunTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const date = d.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+  const time = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time}`;
+}
+
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return '—';
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (!(ms > 0)) return '—';
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+}
+
+const EVENT_LABELS = {
+  schedule: 'cron',
+  workflow_dispatch: '수동',
+  push: 'push',
+};
+
 function renderWatchCard(watch, state) {
   const node = tpl('tpl-watch').firstElementChild;
   node.dataset.watchId = watch.id;
@@ -244,6 +307,19 @@ function renderEmpty(onAdd) {
   return node;
 }
 
+function renderRunRow(run) {
+  const node = tpl('tpl-run-row').firstElementChild;
+  const concl = run.conclusion || (run.status === 'completed' ? '' : 'in_progress');
+  node.querySelector('.run-row__status').dataset.conclusion = concl;
+  node.querySelector('.run-row__time').textContent = fmtRunTime(run.started);
+  const event = EVENT_LABELS[run.event] || run.event || '';
+  const dur = run.status === 'completed' ? fmtDuration(run.started, run.finished) : '진행 중';
+  const status = run.conclusion || run.status || '—';
+  node.querySelector('.run-row__meta').textContent = `${event} · ${dur} · ${status}`;
+  node.querySelector('.run-row__link').href = run.url;
+  return node;
+}
+
 // ----- main -----------------------------------------------------------------
 
 class App {
@@ -252,6 +328,8 @@ class App {
     this.config = emptyConfig();
     this.state = null;
     this.configSha = null;
+    this.cronIntervalMin = 10;
+    this._countdownTimer = null;
   }
 
   async start() {
@@ -261,24 +339,53 @@ class App {
     this._wireFab();
     this._wireSheet();
     this._wireCheckNow();
+    this._wireSettings();
     await this._loadAll();
+    this._startCountdown();
   }
 
   async _loadAll() {
     try {
-      const [{ sha, content }, stateFile] = await Promise.all([
+      const [{ sha, content }, stateFile, workflowFile] = await Promise.all([
         this.gh.getFile('config.json'),
         this.gh.getFile('state.json').catch(() => ({ sha: null, content: null })),
+        this.gh.getFile('.github/workflows/watch.yml').catch(() => ({ sha: null, content: null })),
       ]);
       this.configSha = sha;
       this.config = content ? JSON.parse(content) : emptyConfig();
       this.state = stateFile?.content ? JSON.parse(stateFile.content) : null;
+      this._parseCronFromWorkflow(workflowFile?.content);
     } catch (e) {
+      if (this._isAuthError(e)) {
+        this._handleAuthFailure();
+        return;
+      }
       this._toast(`config.json 로드 실패 — ${e.message}`);
       this.config = emptyConfig();
     }
     this._renderHeader();
     this._renderWatches();
+    this._renderSettings();
+    this._loadRuns();
+  }
+
+  _parseCronFromWorkflow(yamlText) {
+    if (!yamlText) return;
+    const m = yamlText.match(/cron:\s*['"]([^'"]+)['"]/);
+    if (!m) return;
+    const parsed = parseSimpleCron(m[1]);
+    if (parsed) this.cronIntervalMin = parsed.intervalMin;
+  }
+
+  _isAuthError(e) {
+    const msg = String(e?.message || '');
+    return msg.includes('401') || msg.includes('Bad credentials') || msg.includes('403');
+  }
+
+  _handleAuthFailure() {
+    if (this._countdownTimer) clearInterval(this._countdownTimer);
+    clearCreds();
+    renderSetup(c => new App(c).start());
   }
 
   _renderHeader() {
@@ -314,6 +421,70 @@ class App {
     });
   }
 
+  _renderSettings() {
+    const toggle = $('#notify-empty-toggle');
+    if (!toggle) return;
+    const enabled = !!(this.config.settings?.notify_empty_on_cron);
+    toggle.checked = enabled;
+  }
+
+  async _loadRuns() {
+    const list = $('#run-list');
+    if (!list) return;
+    try {
+      const runs = await this.gh.listRuns('watch.yml', 6);
+      list.innerHTML = '';
+      if (!runs.length) {
+        const li = document.createElement('li');
+        li.className = 'run-list--empty';
+        li.textContent = '실행 기록 없음';
+        list.appendChild(li);
+        return;
+      }
+      runs.forEach(r => list.appendChild(renderRunRow(r)));
+    } catch (e) {
+      if (this._isAuthError(e)) {
+        this._handleAuthFailure();
+        return;
+      }
+      list.innerHTML = '';
+      const li = document.createElement('li');
+      li.className = 'run-list--empty';
+      li.textContent = `실행 목록 로드 실패 — ${e.message}`;
+      list.appendChild(li);
+    }
+  }
+
+  _startCountdown() {
+    const intervalEl = $('#poll-interval');
+    const countdownEl = $('#poll-countdown');
+    if (!intervalEl || !countdownEl) return;
+    const tick = () => {
+      const next = nextTickEpoch(this.cronIntervalMin);
+      const remaining = next - Date.now();
+      intervalEl.textContent = `매 ${this.cronIntervalMin}분 자동`;
+      countdownEl.textContent = fmtCountdown(remaining);
+      if (remaining <= 0) {
+        // GitHub cron has up to ~5min lag; check back in 60s for refreshed runs
+        setTimeout(() => this._loadRuns(), 60000);
+      }
+    };
+    tick();
+    if (this._countdownTimer) clearInterval(this._countdownTimer);
+    this._countdownTimer = setInterval(tick, 1000);
+  }
+
+  _wireSettings() {
+    const toggle = $('#notify-empty-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('change', async () => {
+      const enabled = toggle.checked;
+      if (!this.config.settings) this.config.settings = {};
+      this.config.settings.notify_empty_on_cron = enabled;
+      await this._save(`settings: notify_empty_on_cron = ${enabled}`);
+    });
+  }
+
   // ---- mutations ----
 
   async _toggle(id, active) {
@@ -343,6 +514,7 @@ class App {
       const res = await this.gh.putFile('config.json', { content: body, sha: this.configSha, message });
       this.configSha = res.content?.sha ?? this.configSha;
     } catch (e) {
+      if (this._isAuthError(e)) { this._handleAuthFailure(); return; }
       if (String(e.message).includes('409') || String(e.message).includes('422')) {
         const fresh = await this.gh.getFile('config.json');
         this.configSha = fresh.sha;
@@ -390,7 +562,10 @@ class App {
       if (!detected) this._toast('확인 요청은 보냈는데 결과 반영이 느립니다 — 잠시 후 새로고침해 주세요.');
     } catch (e) {
       if (String(e.message).includes('403')) {
-        this._toast('PAT에 Actions: Write 권한이 필요합니다. 설정에서 토큰을 다시 발급해 주세요.');
+        this._toast('PAT에 Actions: Read and write 권한이 필요합니다. 설정에서 토큰을 다시 발급해 주세요.');
+      } else if (this._isAuthError(e)) {
+        this._handleAuthFailure();
+        return;
       } else {
         this._toast(`확인 실패 — ${e.message}`);
       }
