@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" fill="#0E1014"/>
+  <rect x="22" y="22" width="148" height="148" rx="20" ry="20" fill="none" stroke="#272A30" stroke-width="2"/>
+  <rect x="22" y="22" width="148" height="3" fill="#5BA8E5"/>
+  <rect x="22" y="170" width="148" height="3" fill="#E26B7A" transform="translate(0 -6)"/>
+  <text x="96" y="118"
+        font-family="'Bricolage Grotesque', 'Pretendard Variable', system-ui, sans-serif"
+        font-size="92"
+        font-weight="600"
+        fill="#ECE7DD"
+        text-anchor="middle"
+        letter-spacing="-2">발</text>
+</svg>

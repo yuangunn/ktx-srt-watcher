@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E1014">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="발권창구">
+  <meta name="description" content="KTX/SRT 취소표 감시 워치 관리">
+  <title>발권창구</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.svg">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon-192.svg">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" as="style" crossorigin
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+
+  <link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+
+<div id="app"></div>
+
+<template id="tpl-setup">
+  <main class="setup">
+    <section class="setup__card">
+      <p class="setup__eyebrow">초기 연결</p>
+      <h1 class="setup__title">GitHub 연결</h1>
+      <p class="setup__lede">
+        PWA가 <code>config.json</code>을 읽고 쓰려면 본인 GitHub 저장소에 접근할 권한이 필요합니다.
+        Personal Access Token을 발급받아 아래에 붙여 넣으세요. 토큰은 이 기기 <code>localStorage</code>에만 저장됩니다.
+      </p>
+      <ol class="setup__steps">
+        <li>GitHub → <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">Settings → Fine-grained tokens</a> → Generate new token</li>
+        <li>Repository access: <strong>Only select repositories</strong> → <code>ktx-srt-watcher</code> 선택</li>
+        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong></li>
+        <li>발급된 <code>github_pat_…</code> 문자열을 아래에 붙여 넣기</li>
+      </ol>
+      <form class="setup__form" id="setup-form" autocomplete="off">
+        <label class="field">
+          <span class="field__label">Repository</span>
+          <input class="field__input" name="repo" placeholder="owner/repo" value="yuangunn/ktx-srt-watcher" required>
+        </label>
+        <label class="field">
+          <span class="field__label">Personal Access Token</span>
+          <input class="field__input" name="pat" type="password" placeholder="github_pat_…" required>
+        </label>
+        <p class="setup__error" id="setup-error" hidden></p>
+        <button class="btn btn--primary" type="submit">연결</button>
+      </form>
+    </section>
+  </main>
+</template>
+
+<template id="tpl-shell">
+  <header class="header">
+    <div class="header__title">
+      <h1 class="header__name">발권창구</h1>
+      <span class="header__sub" id="header-sub">cancel-seat watcher</span>
+    </div>
+    <div class="header__status" aria-live="polite">
+      <span class="pulse" id="poll-pulse" data-state="idle" aria-hidden="true"></span>
+      <span class="header__last-run" id="last-run">—</span>
+    </div>
+  </header>
+
+  <hr class="rule rule--dotted" aria-hidden="true">
+
+  <main class="page">
+    <section class="watches" id="watches" aria-label="감시 중인 워치"></section>
+  </main>
+
+  <button class="fab" id="fab-add" type="button" aria-label="워치 추가">
+    <span class="fab__plus" aria-hidden="true">＋</span>
+    <span class="fab__label">워치 추가</span>
+  </button>
+
+  <dialog class="sheet" id="sheet">
+    <form class="sheet__form" method="dialog" id="watch-form" autocomplete="off">
+      <header class="sheet__header">
+        <button class="icon-btn" type="button" id="sheet-close" aria-label="닫기">×</button>
+        <h2 class="sheet__title" id="sheet-title">새 워치</h2>
+        <span class="sheet__filler" aria-hidden="true"></span>
+      </header>
+
+      <fieldset class="seg" aria-label="제공자">
+        <legend class="field__label">제공자</legend>
+        <label class="seg__opt"><input type="radio" name="provider" value="korail" checked><span data-prov="korail">KORAIL · KTX</span></label>
+        <label class="seg__opt"><input type="radio" name="provider" value="srt"><span data-prov="srt">SRT</span></label>
+      </fieldset>
+
+      <div class="row row--2">
+        <label class="field">
+          <span class="field__label">출발</span>
+          <input class="field__input" name="from" list="stations" placeholder="수원" required>
+        </label>
+        <label class="field">
+          <span class="field__label">도착</span>
+          <input class="field__input" name="to" list="stations" placeholder="부산" required>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">날짜</span>
+        <input class="field__input field__input--mono" name="date" type="date" required>
+      </label>
+
+      <div class="row row--2">
+        <label class="field">
+          <span class="field__label">최저 시간</span>
+          <input class="field__input field__input--mono" name="time_min" type="time" value="09:00" required>
+        </label>
+        <label class="field">
+          <span class="field__label">최대 시간</span>
+          <input class="field__input field__input--mono" name="time_max" type="time" value="12:00" required>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">열차 종류 <span class="field__hint">(쉼표로 구분)</span></span>
+        <input class="field__input" name="train_types" placeholder="KTX, KTX-산천" required>
+      </label>
+
+      <div class="row row--3">
+        <label class="field">
+          <span class="field__label">성인</span>
+          <input class="field__input field__input--mono" name="adult" type="number" min="0" max="9" value="1">
+        </label>
+        <label class="field">
+          <span class="field__label">아동</span>
+          <input class="field__input field__input--mono" name="child" type="number" min="0" max="9" value="0">
+        </label>
+        <label class="field">
+          <span class="field__label">경로</span>
+          <input class="field__input field__input--mono" name="senior" type="number" min="0" max="9" value="0">
+        </label>
+      </div>
+
+      <fieldset class="seg" aria-label="좌석 등급">
+        <legend class="field__label">좌석 등급</legend>
+        <label class="seg__opt"><input type="radio" name="seat_class" value="general" checked><span>일반</span></label>
+        <label class="seg__opt"><input type="radio" name="seat_class" value="special"><span>특실</span></label>
+        <label class="seg__opt"><input type="radio" name="seat_class" value="any"><span>둘 다</span></label>
+      </fieldset>
+
+      <p class="sheet__error" id="sheet-error" hidden></p>
+
+      <div class="sheet__actions">
+        <button class="btn btn--ghost" type="button" id="sheet-cancel">취소</button>
+        <button class="btn btn--primary" type="submit" id="sheet-submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <datalist id="stations">
+    <option value="서울"><option value="용산"><option value="광명"><option value="수원">
+    <option value="천안아산"><option value="오송"><option value="대전"><option value="김천구미">
+    <option value="동대구"><option value="신경주"><option value="울산"><option value="부산">
+    <option value="수서"><option value="동탄"><option value="평택지제">
+  </datalist>
+</template>
+
+<template id="tpl-watch">
+  <article class="watch" data-watch-id="" data-provider="" data-active="">
+    <span class="watch__stripe" aria-hidden="true"></span>
+    <div class="watch__head">
+      <span class="badge badge--provider"></span>
+      <h3 class="watch__route">
+        <span class="watch__from"></span>
+        <span class="watch__arrow" aria-hidden="true">→</span>
+        <span class="watch__to"></span>
+      </h3>
+    </div>
+    <p class="watch__date"></p>
+    <dl class="watch__meta">
+      <div class="watch__meta-row">
+        <dt class="watch__meta-label">시간대</dt>
+        <dd class="watch__meta-value mono"></dd>
+      </div>
+      <div class="watch__meta-row">
+        <dt class="watch__meta-label">열차</dt>
+        <dd class="watch__meta-types"></dd>
+      </div>
+      <div class="watch__meta-row">
+        <dt class="watch__meta-label">인원</dt>
+        <dd class="watch__meta-value mono"></dd>
+      </div>
+    </dl>
+    <hr class="rule rule--dotted" aria-hidden="true">
+    <footer class="watch__foot">
+      <span class="watch__last-check"></span>
+      <div class="watch__controls">
+        <button class="btn btn--danger-ghost watch__delete" type="button">삭제</button>
+        <label class="toggle">
+          <input class="toggle__input" type="checkbox" aria-label="활성화">
+          <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        </label>
+      </div>
+    </footer>
+  </article>
+</template>
+
+<template id="tpl-empty">
+  <div class="empty">
+    <span class="empty__rail" aria-hidden="true"></span>
+    <p class="empty__text">아직 워치가 없습니다</p>
+    <span class="empty__rail" aria-hidden="true"></span>
+    <button class="btn btn--primary" id="empty-add" type="button">첫 워치 추가하기</button>
+  </div>
+</template>
+
+<script src="./js/app.js" type="module"></script>
+</body>
+</html>
