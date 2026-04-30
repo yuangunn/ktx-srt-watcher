@@ -28,7 +28,7 @@
       "to": "부산",
       "date": "2026-05-23",
       "time_min": "06:00",
-      "time_max": "14:00",
+      "time_max": "12:00",
       "train_types": [
         "SRT"
       ],
@@ -38,7 +38,7 @@
         "senior": 0
       },
       "seat_class": "any",
-      "auto_reserve": false,
+      "auto_reserve": true,
       "active": true
     }
   ],
