@@ -18,7 +18,7 @@
         "senior": 0
       },
       "seat_class": "any",
-      "auto_reserve": true,
+      "auto_reserve": false,
       "active": false
     },
     {
