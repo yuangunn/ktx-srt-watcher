@@ -47,8 +47,8 @@
       "from": "부산",
       "to": "동탄",
       "date": "2026-05-25",
-      "time_min": "16:00",
-      "time_max": "20:00",
+      "time_min": "18:00",
+      "time_max": "20:30",
       "train_types": [
         "SRT"
       ],
