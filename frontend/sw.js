@@ -1,7 +1,7 @@
 // 발권창구 service worker — caches the app shell only.
 // Data (config.json / state.json) is always fetched fresh from GitHub.
 
-const VERSION = 'v16';
+const VERSION = 'v17';
 const SHELL = [
   './',
   './index.html',
@@ -34,13 +34,20 @@ self.addEventListener('fetch', e => {
   // Never cache GitHub API or font CDNs — must hit network.
   if (url.host !== self.location.host) return;
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
+  // Network-first for the app shell: a fresh deploy shows up on the next
+  // launch without waiting for a VERSION bump. Cache is only a fallback
+  // for offline; we refresh it on every successful fetch.
+  e.respondWith((async () => {
+    try {
+      const res = await fetch(e.request);
       if (res.ok) {
         const copy = res.clone();
         caches.open(VERSION).then(c => c.put(e.request, copy));
       }
       return res;
-    }).catch(() => caches.match('./index.html')))
-  );
+    } catch {
+      const hit = await caches.match(e.request);
+      return hit || caches.match('./index.html');
+    }
+  })());
 });
