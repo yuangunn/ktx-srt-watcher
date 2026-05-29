@@ -1,6 +1,6 @@
 // ============================================================================
 // 발권창구 — frontend logic
-// Reads/writes config.json on a private GitHub repo via Contents API.
+// Reads/writes config.json on a public GitHub repo via Contents API.
 // State is intentionally simple: localStorage holds {repo, pat}; everything
 // else is derived from config.json (writes) and state.json (reads).
 // ============================================================================
