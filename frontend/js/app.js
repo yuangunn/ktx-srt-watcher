@@ -1,6 +1,6 @@
 // ============================================================================
 // 발권창구 — frontend logic
-// Reads/writes config.json on a private GitHub repo via Contents API.
+// Reads/writes config.json on a public GitHub repo via Contents API.
 // State is intentionally simple: localStorage holds {repo, pat}; everything
 // else is derived from config.json (writes) and state.json (reads).
 // ============================================================================
@@ -988,7 +988,13 @@ function renderSetup(onSubmit) {
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    // Force an update check on launch and whenever the app returns to the
+    // foreground, so a new SW (and shell) is picked up promptly on reopen.
+    reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
     navigator.serviceWorker.addEventListener('message', e => {
       if (e.data?.type !== 'sw-updated') return;
       // Only reload if the user isn't mid-interaction with a dialog.
