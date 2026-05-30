@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,6 +31,100 @@ ScheduleRemindersFn = Callable[[Watch, Train, "Reservation"], None]
 # How many candidate trains to attempt reserving when the first one(s) are
 # already taken. Caps the burst of API calls into Korail/SRT per run.
 MAX_RESERVE_CANDIDATES = 3
+
+# Hard floor for any user-set poll interval. Keeps the watcher from
+# hammering Korail/SRT (and looking like a bot) no matter what the PWA sends.
+MIN_POLL_INTERVAL_MIN = 10
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _roll_interval_min(mode: str, poll_interval_min: int, settings: dict[str, Any]) -> int:
+    """Pick the next poll interval in minutes. 0 means 'no throttle'.
+
+    Randomized modes (range/choices) make the cadence irregular so the
+    poll pattern Korail/SRT see doesn't look like clockwork (anti-bot).
+    All non-zero results are floored at MIN_POLL_INTERVAL_MIN.
+    """
+    if mode == "range":
+        rng = settings.get("poll_interval_range") or []
+        if len(rng) == 2:
+            try:
+                lo, hi = int(rng[0]), int(rng[1])
+            except (TypeError, ValueError):
+                lo = hi = 0
+            lo, hi = min(lo, hi), max(lo, hi)
+            lo = max(MIN_POLL_INTERVAL_MIN, lo)
+            hi = max(lo, hi)
+            return random.randint(lo, hi)
+    elif mode == "choices":
+        choices = []
+        for c in settings.get("poll_interval_choices") or []:
+            try:
+                n = int(c)
+            except (TypeError, ValueError):
+                continue
+            if n >= MIN_POLL_INTERVAL_MIN:
+                choices.append(n)
+        if choices:
+            return random.choice(choices)
+    # fixed mode, or a malformed randomized config: fall back to fixed value
+    if poll_interval_min and poll_interval_min < MIN_POLL_INTERVAL_MIN:
+        return MIN_POLL_INTERVAL_MIN
+    return poll_interval_min
+
+
+def _should_throttle(
+    mode: str, poll_interval_min: int, settings: dict[str, Any],
+    state: dict[str, Any], now_iso: str,
+) -> bool:
+    """True if this automated run should skip because we polled too recently."""
+    now_dt = _parse_dt(now_iso)
+    if now_dt is None:
+        return False
+    if mode in ("range", "choices"):
+        # Randomized cadence: the target for this gap was rolled and stored
+        # as next_poll_at the last time we actually polled. Skip until then.
+        next_dt = _parse_dt(state.get("next_poll_at"))
+        if next_dt is not None and now_dt < next_dt:
+            log.info(
+                "skip run: before next_poll_at=%s (mode=%s)",
+                state.get("next_poll_at"), mode,
+            )
+            return True
+        return False
+    # fixed mode: epoch-bucket throttle (driftless, aligned to wall clock)
+    if poll_interval_min <= 0:
+        return False
+    last_dt = _parse_dt(state.get("last_run"))
+    if last_dt is None:
+        return False
+    bucket = poll_interval_min * 60
+    if int(last_dt.timestamp()) // bucket == int(now_dt.timestamp()) // bucket:
+        log.info("skip run: same %dm bucket as last_run", poll_interval_min)
+        return True
+    return False
+
+
+def _set_next_poll(mode: str, settings: dict[str, Any], state: dict[str, Any], now_iso: str) -> None:
+    """For randomized modes, roll the next interval and stash next_poll_at."""
+    if mode not in ("range", "choices"):
+        state.pop("next_poll_at", None)
+        return
+    poll_interval_min = int(settings.get("poll_interval_min") or 0)
+    rolled = _roll_interval_min(mode, poll_interval_min, settings)
+    now_dt = _parse_dt(now_iso)
+    if rolled and now_dt is not None:
+        nxt = now_dt + timedelta(minutes=rolled)
+        state["next_poll_at"] = nxt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        log.info("next poll in ~%dm at %s (mode=%s)", rolled, state["next_poll_at"], mode)
 
 
 def main() -> int:
@@ -90,30 +185,19 @@ def run_watches(
         not is_manual_pre
         and notifier.is_quiet_hour_kst(now_iso, quiet_start, quiet_end)
     )
-    if poll_interval_min > 0 and is_automated_pre and state.get("last_run"):
-        try:
-            last_dt = datetime.fromisoformat(state["last_run"].replace("Z", "+00:00"))
-            now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
-            # Bucket-based throttle: divide epoch time into N-min windows;
-            # skip if the previous run fell into the same window we're in
-            # right now.  This avoids the elapsed-based drift problem where
-            # a run at HH:00:25 makes the HH:30:00 tick measure 29:35
-            # elapsed and skip — losing the cadence — even though it's a
-            # different cron boundary.
-            bucket_size = poll_interval_min * 60
-            last_bucket = int(last_dt.timestamp()) // bucket_size
-            now_bucket = int(now_dt.timestamp()) // bucket_size
-            if last_bucket == now_bucket:
-                elapsed_sec = (now_dt - last_dt).total_seconds()
-                log.info(
-                    "skip run: same %dm bucket as last_run (elapsed=%.0fs, %s)",
-                    poll_interval_min, elapsed_sec, event_name,
-                )
-                return
-        except (ValueError, TypeError):
-            pass
+    # Poll throttle. Three modes (settings.poll_interval_mode):
+    #   fixed   — epoch-bucket cadence at poll_interval_min (default)
+    #   range   — random minutes in [lo, hi] each gap (anti-bot)
+    #   choices — random pick from a list of minutes each gap (anti-bot)
+    # Randomized modes store the rolled target as state.next_poll_at.
+    poll_mode = settings_pre.get("poll_interval_mode") or "fixed"
+    if is_automated_pre and _should_throttle(
+        poll_mode, poll_interval_min, settings_pre, state, now_iso
+    ):
+        return
 
     state_mod.mark_run(state, now_iso)
+    _set_next_poll(poll_mode, settings_pre, state, now_iso)
 
     active = [Watch.model_validate(w) for w in config.get("watches", []) if w.get("active", True)]
     by_provider: dict[str, list[Watch]] = {}

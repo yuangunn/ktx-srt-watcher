@@ -4,8 +4,12 @@ compatibility_date = "2026-04-30"
 
 # Cron schedules for this Worker (each fires the scheduled handler with
 # event.cron equal to the matching string):
-#   "*/30 * * * *"  → dispatchWatcher: triggers GHA repository_dispatch
-#                     at the cadence the watcher actually polls Korail/SRT
+#   "*/5 * * * *"   → dispatchWatcher: triggers GHA repository_dispatch
+#                     every 5 min. This is the *trigger* granularity; the
+#                     watcher itself decides whether to actually poll based
+#                     on settings.poll_interval_mode (fixed/range/choices).
+#                     Fine granularity lets randomized intervals (e.g. 27m)
+#                     land close to target instead of snapping to 30m.
 #   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
 #                     any due payment-deadline reminders to Telegram
 #   "0 */6 * * *"   → heartbeatCheck: alerts if state.json::last_run is
@@ -19,10 +23,11 @@ compatibility_date = "2026-04-30"
 #                     Fetches Actions runs from past 7 days + state
 #                     watch count and Telegrams a digest so the user
 #                     knows the system is healthy and how busy it was.
-# Manual "지금 확인" / workflow_dispatch is unaffected. Tighten the */30
-# only when you've moved off GHA free tier or made the repo public.
+# Manual "지금 확인" / workflow_dispatch is unaffected. Repo is public so
+# GHA minutes are free/unlimited; the watcher's own throttle keeps the
+# actual Korail/SRT poll rate sane (min 10 min, see settings.poll_interval_mode).
 [triggers]
-crons = ["*/30 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
+crons = ["*/5 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"

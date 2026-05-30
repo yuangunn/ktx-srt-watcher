@@ -92,19 +92,37 @@
     <section class="panel" id="settings-panel">
       <h2 class="panel__title">설정</h2>
 
-      <div class="setting-row">
+      <div class="setting-row setting-row--col">
         <div class="setting-row__main">
           <span class="setting-row__title">폴링 간격</span>
-          <span class="setting-row__hint">퍼블릭 레포라 GHA 실행 시간은 무제한·무료입니다. 다만 너무 잦으면 코레일/SRT 서버에 부담이 되니 30분 권장. 수동(지금 확인)은 항상 즉시 동작.</span>
+          <span class="setting-row__hint">최소 10분. 범위/목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 실제 정밀도는 CF 트리거 주기(5분) 단위. 수동(지금 확인)은 항상 즉시 동작.</span>
         </div>
-        <select class="select-mini" id="poll-interval-select" aria-label="폴링 간격">
-          <option value="0">기본</option>
-          <option value="5">5분</option>
-          <option value="10">10분</option>
-          <option value="15">15분</option>
-          <option value="30">30분</option>
-          <option value="60">60분</option>
-        </select>
+        <div class="setting-row__inline">
+          <label class="quiet-time">
+            <span class="field__label">모드</span>
+            <select class="select-mini" id="poll-mode-select" aria-label="폴링 모드">
+              <option value="fixed">고정</option>
+              <option value="range">범위 랜덤</option>
+              <option value="choices">목록 랜덤</option>
+            </select>
+          </label>
+          <label class="quiet-time" id="poll-fixed-field">
+            <span class="field__label">간격(분)</span>
+            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-fixed-input" placeholder="30" aria-label="고정 간격(분)" />
+          </label>
+          <label class="quiet-time" id="poll-range-min-field" hidden>
+            <span class="field__label">최소(분)</span>
+            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-min" placeholder="27" aria-label="범위 최소(분)" />
+          </label>
+          <label class="quiet-time" id="poll-range-max-field" hidden>
+            <span class="field__label">최대(분)</span>
+            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-max" placeholder="29" aria-label="범위 최대(분)" />
+          </label>
+          <label class="quiet-time" id="poll-choices-field" hidden>
+            <span class="field__label">간격 목록(분, 쉼표)</span>
+            <input class="field__input field__input--mono" type="text" inputmode="numeric" id="poll-choices-input" placeholder="27, 42, 36" aria-label="간격 목록(분, 쉼표로 구분)" />
+          </label>
+        </div>
       </div>
 
       <div class="setting-row">
