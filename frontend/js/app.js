@@ -553,12 +553,36 @@ class App {
     if (toggle) toggle.checked = !!s.notify_empty_on_cron;
     const wait = $('#allow-waiting-toggle');
     if (wait) wait.checked = !!s.allow_waiting_list;
-    const select = $('#poll-interval-select');
-    if (select) select.value = String(s.poll_interval_min ?? 0);
+    this._renderPollConfig(s);
     const qs = $('#quiet-start');
     const qe = $('#quiet-end');
     if (qs) qs.value = s.quiet_hours_start || '';
     if (qe) qe.value = s.quiet_hours_end || '';
+  }
+
+  _renderPollConfig(s) {
+    const mode = s.poll_interval_mode || 'fixed';
+    const modeSel = $('#poll-mode-select');
+    if (modeSel) modeSel.value = mode;
+    const fixed = $('#poll-fixed-input');
+    if (fixed) fixed.value = s.poll_interval_min ? String(s.poll_interval_min) : '';
+    const range = Array.isArray(s.poll_interval_range) ? s.poll_interval_range : [];
+    const rMin = $('#poll-range-min');
+    const rMax = $('#poll-range-max');
+    if (rMin) rMin.value = range[0] != null ? String(range[0]) : '';
+    if (rMax) rMax.value = range[1] != null ? String(range[1]) : '';
+    const choices = Array.isArray(s.poll_interval_choices) ? s.poll_interval_choices : [];
+    const ch = $('#poll-choices-input');
+    if (ch) ch.value = choices.join(', ');
+    this._applyPollMode(mode);
+  }
+
+  _applyPollMode(mode) {
+    const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
+    show('#poll-fixed-field', mode === 'fixed');
+    show('#poll-range-min-field', mode === 'range');
+    show('#poll-range-max-field', mode === 'range');
+    show('#poll-choices-field', mode === 'choices');
   }
 
   async _loadRuns() {
@@ -673,13 +697,28 @@ class App {
     const countdownEl = $('#poll-countdown');
     if (!intervalEl || !countdownEl) return;
     const tick = () => {
-      const userInterval = Number(this.config.settings?.poll_interval_min) || 0;
-      const effective = Math.max(this.cronIntervalMin, userInterval);
-      const next = nextTickEpoch(effective);
-      const remaining = next - Date.now();
+      const s = this.config.settings || {};
+      const mode = s.poll_interval_mode || 'fixed';
       const sourcePrefix = this.cronSource === 'cf' ? 'CF · ' : '';
-      const userTag = userInterval > this.cronIntervalMin ? ` (제한)` : '';
-      intervalEl.textContent = `${sourcePrefix}매 ${effective}분 자동${userTag}`;
+      let label, remaining;
+      const nextAt = this.state?.next_poll_at ? Date.parse(this.state.next_poll_at) : NaN;
+      if (mode === 'range' || mode === 'choices') {
+        // Randomized cadence: the worker stores the rolled target as
+        // state.next_poll_at, so the countdown reflects the real next poll.
+        label = mode === 'range'
+          ? `${sourcePrefix}랜덤 ${(s.poll_interval_range || []).join('~') || '?'}분`
+          : `${sourcePrefix}랜덤 [${(s.poll_interval_choices || []).join(',')}]분`;
+        remaining = Number.isFinite(nextAt)
+          ? nextAt - Date.now()
+          : nextTickEpoch(this.cronIntervalMin) - Date.now();
+      } else {
+        const userInterval = Number(s.poll_interval_min) || 0;
+        const effective = Math.max(this.cronIntervalMin, userInterval);
+        const userTag = userInterval > this.cronIntervalMin ? ` (제한)` : '';
+        label = `${sourcePrefix}매 ${effective}분 자동${userTag}`;
+        remaining = nextTickEpoch(effective) - Date.now();
+      }
+      intervalEl.textContent = label;
       countdownEl.textContent = fmtCountdown(remaining);
       if (remaining <= 0) {
         setTimeout(() => this._loadRuns(), 60000);
@@ -709,12 +748,53 @@ class App {
         await this._save(`settings: allow_waiting_list = ${wait.checked}`);
       });
     }
-    const select = $('#poll-interval-select');
-    if (select) {
-      select.addEventListener('change', async () => {
-        const v = parseInt(select.value, 10) || 0;
+    // Poll interval: mode (fixed/range/choices) + per-mode inputs.
+    // clampMin floors any non-zero entry at 10 min (anti-bot / server load).
+    const clampMin = (n) => (Number.isFinite(n) && n > 0 ? Math.max(10, Math.round(n)) : 0);
+    const modeSel = $('#poll-mode-select');
+    if (modeSel) {
+      modeSel.addEventListener('change', async () => {
+        const mode = modeSel.value;
+        this._applyPollMode(mode);
+        ensure().poll_interval_mode = mode;
+        await this._save(`settings: poll_interval_mode = ${mode}`);
+        this._startCountdown();
+      });
+    }
+    const fixed = $('#poll-fixed-input');
+    if (fixed) {
+      fixed.addEventListener('change', async () => {
+        const v = clampMin(Number(fixed.value));
+        fixed.value = v ? String(v) : '';
         ensure().poll_interval_min = v;
         await this._save(`settings: poll_interval_min = ${v}`);
+        this._startCountdown();
+      });
+    }
+    const rMin = $('#poll-range-min');
+    const rMax = $('#poll-range-max');
+    const persistRange = async () => {
+      let lo = clampMin(Number(rMin?.value));
+      let hi = clampMin(Number(rMax?.value));
+      if (lo && hi && lo > hi) { const t = lo; lo = hi; hi = t; }
+      if (rMin) rMin.value = lo ? String(lo) : '';
+      if (rMax) rMax.value = hi ? String(hi) : '';
+      ensure().poll_interval_range = (lo && hi) ? [lo, hi] : [];
+      await this._save(`settings: poll_interval_range = [${lo || ''}, ${hi || ''}]`);
+      this._startCountdown();
+    };
+    if (rMin) rMin.addEventListener('change', persistRange);
+    if (rMax) rMax.addEventListener('change', persistRange);
+    const choicesInput = $('#poll-choices-input');
+    if (choicesInput) {
+      choicesInput.addEventListener('change', async () => {
+        const list = String(choicesInput.value)
+          .split(',')
+          .map(x => clampMin(Number(x.trim())))
+          .filter(n => n >= 10);
+        choicesInput.value = list.join(', ');
+        ensure().poll_interval_choices = list;
+        await this._save(`settings: poll_interval_choices = [${list.join(', ')}]`);
         this._startCountdown();
       });
     }

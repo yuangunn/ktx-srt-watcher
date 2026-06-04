@@ -1,9 +1,12 @@
 // KTX/SRT Watcher · Cloudflare Worker.
 //
 // Two crons fire on this Worker:
-//   "*/30 * * * *"  → dispatchWatcher: GHA repository_dispatch every 30 min,
-//                     working around the GHA private/free-tier scheduled-
-//                     workflow throttle (which we measured at ~48 min).
+//   "*/5 * * * *"   → dispatchWatcher: GHA repository_dispatch every 5 min.
+//                     This is just the trigger cadence; the watcher decides
+//                     whether to actually poll based on its own throttle
+//                     (settings.poll_interval_mode: fixed/range/choices).
+//                     Fine granularity lets randomized intervals land near
+//                     target instead of snapping to a 30-min boundary.
 //   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
 //                     any due payment-deadline reminders to Telegram.
 //
@@ -15,7 +18,7 @@
 
 export default {
   async scheduled(event, env, ctx) {
-    if (event.cron === "*/30 * * * *") {
+    if (event.cron === "*/5 * * * *") {
       ctx.waitUntil(dispatchWatcher(env, "cron"));
     } else if (event.cron === "*/1 * * * *") {
       ctx.waitUntil(processReminders(env));

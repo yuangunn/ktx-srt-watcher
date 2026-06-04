@@ -1,6 +1,6 @@
 # KTX/SRT 취소표 감시 봇
 
-GitHub Actions cron + Cloudflare Worker bridge가 30분마다 [코레일](https://www.letskorail.com)/[SRT](https://etk.srail.kr)를 폴링해 취소표를 잡고, 텔레그램으로 알림을 보냅니다. 옵션으로 임시예약(20분 hold)까지 자동으로 잡고, 결제 마감 reminder(T+5/10/15/19분)도 자동 발송합니다. **결제는 절대 자동화하지 않습니다** — 본인 직접.
+GitHub Actions + Cloudflare Worker bridge가 설정한 간격(최소 10분, 고정/랜덤)으로 [코레일](https://www.letskorail.com)/[SRT](https://etk.srail.kr)를 폴링해 취소표를 잡고, 텔레그램으로 알림을 보냅니다. 옵션으로 임시예약(20분 hold)까지 자동으로 잡고, 결제 마감 reminder(T+5/10/15/19분)도 자동 발송합니다. **결제는 절대 자동화하지 않습니다** — 본인 직접.
 
 PWA([Cloudflare Pages](https://pages.cloudflare.com))로 워치 추가/수정/삭제, 통계 보기, 로그 확인. iOS Safari에서 standalone 설치 가능.
 
@@ -39,7 +39,7 @@ PWA([Cloudflare Pages](https://pages.cloudflare.com))로 워치 추가/수정/�
        │  GitHub Repo        │◄───│  CF Worker          │
        │  (private)          │    │  (cloudflare-worker)│
        │  - config.json      │    │                     │
-       │  - state.json       │    │  Cron */30:         │
+       │  - state.json       │    │  Cron */5:         │
        │  - .github/...      │    │   → repository_     │
        │  - worker/...       │    │     dispatch ──┐    │
        └──────────┬──────────┘                     │    │
@@ -191,7 +191,7 @@ PWA `+ 워치 추가` 버튼:
 
 | 항목 | 의미 | 기본값 |
 |---|---|---|
-| 폴링 간격 | "기본"이면 CF cron 그대로 (30분), 또는 5/10/15/30/60분 중 선택해 더 느리게 throttle | 기본 |
+| 폴링 간격 | 모드 3종: **고정**(`poll_interval_min`) / **범위 랜덤**(`poll_interval_range: [27,29]`) / **목록 랜덤**(`poll_interval_choices: [27,42,36]`). 모두 최소 10분 강제. 랜덤 모드는 매번 다른 간격으로 폴링해 봇 탐지 회피 | 고정 |
 | 빈 결과도 알림 | cron이 잔여 0건 발견해도 텔레그램으로 요약 메시지 발송 | OFF |
 | 대기예약 자동 등록 | 매진 좌석에 대해 자동 대기예약 (코레일 `try_waiting` / SRT `reserve_standby`) | OFF |
 | 조용한 시간 (KST) | 이 시간대 cron 알림은 음소거 (`disable_notification`). 수동/임시예약/reminder는 무관 | 비활성 |
@@ -203,12 +203,12 @@ PWA `+ 워치 추가` 버튼:
 
 | 서비스 | 사용량 | 한도 | 여유 |
 |---|---|---|---|
-| GitHub Actions (private) | ~1,440분/월 (30분 cron × 1분/run × 31일) | 2,000분/월 | 안전 |
+| GitHub Actions (public) | 무제한 (퍼블릭 레포는 무료) | — | 무제한 |
 | Cloudflare Workers | ~3,000 invocations/일 (5개 cron + reminder) | 100,000/일 | 매우 여유 |
 | Cloudflare Pages | 정적 파일 호스팅 | 500 build/월, 무제한 요청 | 여유 |
 | Cloudflare KV | 30 reads + 30 writes/일 | 100k/일 | 여유 |
 
-폴링 간격을 5분으로 낮추면 GitHub Actions 한도 초과 가능 — wrangler.toml의 cron을 수정하기 전 확인.
+레포가 퍼블릭이라 GitHub Actions 실행 시간은 무제한·무료입니다. CF 트리거는 `*/5`로 촘촘하게 두고, 실제 폴링 빈도는 워커의 throttle(최소 10분, fixed/range/choices)이 제어합니다.
 
 ---
 
@@ -216,11 +216,11 @@ PWA `+ 워치 추가` 버튼:
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| Actions가 30분이 아니라 50분~60분에 한 번씩 도는 듯 | GHA private free-tier가 schedule cron을 throttle. CF Worker가 `*/30 repository_dispatch`로 우회. CF Worker 정상 배포돼있는지 `npx wrangler tail` 확인 |
+| 폴링이 설정한 간격보다 늦거나 불규칙함 | 실제 폴링은 CF Worker `*/5 repository_dispatch` 트리거 위에서 워커 throttle로 동작. 랜덤 모드는 의도적으로 불규칙. CF Worker 정상 배포 여부는 `npx wrangler tail`로 확인 |
 | 텔레그램 알림이 안 옴 | 1) `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` GitHub secret 확인. 2) 봇 채팅창에 `/start` 한 번 보냈는지. 3) PWA의 "조용한 시간"이 지금 시간대를 포함하는지 |
 | 자동 예약 직후 "동일한 예약" 에러 | state.json commit이 다음 run보다 늦게 propagate된 case. 어댑터가 `WRR800029` / "동일한 예약" 메시지를 detect하면 silent dedupe — 정상 동작 |
 | `결제 마감 12:06`처럼 시간이 이상함 | 이전 버그. 지금은 코레일/SRT 응답의 실제 deadline + KST 변환을 사용. 신규 임시예약부터 정상 |
-| Run watcher 로그가 비어 보임 | `poll_interval_min` filter로 skip된 run. 모달 상단에 안내 배너 표시. 실제 조회 결과는 직전 실제 실행 클릭해서 확인 |
+| Run watcher 로그가 비어 보임 | poll 간격 throttle로 skip된 run (랜덤 모드는 `state.json`의 `next_poll_at` 전까지 skip). 모달 상단에 안내 배너 표시. 실제 조회 결과는 직전 실제 실행 클릭해서 확인 |
 | PAT 만료 임박 알림이 옴 | CF Worker의 daily PAT check 동작 중. 안내된 절차로 토큰 regenerate + `npx wrangler secret put GITHUB_TOKEN` 갱신 |
 | 워커가 6시간 침묵 알림 | Heartbeat 동작. CF Worker 또는 GHA Actions, PAT 점검 필요 |
 
