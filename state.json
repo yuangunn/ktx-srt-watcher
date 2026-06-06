@@ -17,11 +17,6 @@
       ],
       "watch_date": "2026-05-23"
     },
-    "suseo-dongdaegu-20260515-pm": {
-      "last_check": "2026-04-30T07:51:41Z",
-      "notified_train_ids": [],
-      "watch_date": "2026-05-15"
-    },
     "seoul-busan-20260515-am": {
       "last_check": "2026-04-30T07:51:41Z",
       "notified_train_ids": [
@@ -39,6 +34,11 @@
         "2026-05-25-9366-20:00"
       ],
       "watch_date": "2026-05-25"
+    },
+    "suseo-dongdaegu-20260515-pm": {
+      "last_check": "2026-04-30T07:51:41Z",
+      "notified_train_ids": [],
+      "watch_date": "2026-05-15"
     },
     "수원-부산-20260513-lqc7": {
       "last_check": "2026-04-30T11:46:51Z",
