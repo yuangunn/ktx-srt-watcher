@@ -12,11 +12,6 @@
       ],
       "watch_date": "2026-05-15"
     },
-    "동대구-동탄-20260525-ex0b": {
-      "last_check": "2026-05-25T08:01:16Z",
-      "notified_train_ids": [],
-      "watch_date": "2026-05-25"
-    },
     "수원-부산-20260523-vgqv": {
       "last_check": "2026-05-02T17:30:13Z",
       "notified_train_ids": [
@@ -43,6 +38,11 @@
       "last_check": "2026-04-30T07:51:41Z",
       "notified_train_ids": [],
       "watch_date": "2026-05-15"
+    },
+    "동대구-동탄-20260525-ex0b": {
+      "last_check": "2026-05-25T08:01:16Z",
+      "notified_train_ids": [],
+      "watch_date": "2026-05-25"
     },
     "동탄-부산-20260523-kmro": {
       "last_check": "2026-05-22T14:31:04Z",
