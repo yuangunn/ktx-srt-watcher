@@ -9,11 +9,6 @@
       ],
       "watch_date": "2026-05-23"
     },
-    "suseo-dongdaegu-20260515-pm": {
-      "last_check": "2026-04-30T07:51:41Z",
-      "notified_train_ids": [],
-      "watch_date": "2026-05-15"
-    },
     "수원-부산-20260523-vgqv": {
       "last_check": "2026-05-02T17:30:13Z",
       "notified_train_ids": [
@@ -33,9 +28,11 @@
       ],
       "watch_date": "2026-05-15"
     },
-    "동대구-동탄-20260525-ex0b": {
-      "last_check": "2026-05-25T08:01:16Z",
-      "notified_train_ids": [],
+    "부산-동탄-20260525-frfv": {
+      "last_check": "2026-05-03T14:31:11Z",
+      "notified_train_ids": [
+        "2026-05-25-9366-20:00"
+      ],
       "watch_date": "2026-05-25"
     },
     "수원-부산-20260513-lqc7": {
@@ -45,12 +42,15 @@
       ],
       "watch_date": "2026-05-13"
     },
-    "부산-동탄-20260525-frfv": {
-      "last_check": "2026-05-03T14:31:11Z",
-      "notified_train_ids": [
-        "2026-05-25-9366-20:00"
-      ],
+    "동대구-동탄-20260525-ex0b": {
+      "last_check": "2026-05-25T08:01:16Z",
+      "notified_train_ids": [],
       "watch_date": "2026-05-25"
+    },
+    "suseo-dongdaegu-20260515-pm": {
+      "last_check": "2026-04-30T07:51:41Z",
+      "notified_train_ids": [],
+      "watch_date": "2026-05-15"
     }
   }
 }
