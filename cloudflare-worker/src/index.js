@@ -7,8 +7,10 @@
 //                     (settings.poll_interval_mode: fixed/range/choices).
 //                     Fine granularity lets randomized intervals land near
 //                     target instead of snapping to a 30-min boundary.
-//   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
-//                     any due payment-deadline reminders to Telegram.
+//   "*/1 * * * *"   → processReminders: reads the REMINDERS KV (single key)
+//                     and fires any due payment-deadline reminders to Telegram.
+//                     Uses a single .get() instead of .list() to stay within
+//                     the free tier (1000 list ops/day limit).
 //
 // HTTP surface:
 //   GET  /health             plain liveness check
@@ -118,16 +120,30 @@ async function dispatchWatcher(env, source) {
 }
 
 // REMINDER STATE in KV
-//   key:   reservation_id (e.g. "320260442500832")
-//   value: {
-//     id, route, train, date, deadline_iso,    // metadata for messages
+//   key:   "all"  (single JSON blob — avoids KV list operations)
+//   value: { [reservation_id]: {
+//     id, route, train, date, deadline_iso,
+//     provider,
 //     reminders: [
 //       { trigger_at_ms, remaining_min, kind: "warn"|"final", sent: false }
 //     ]
-//   }
-// TTL: deadline + 5min so KV self-cleans after the reservation is past.
+//   } }
+//
+// Using a single key instead of per-reservation keys eliminates `.list()`
+// calls entirely. The free tier allows 10M reads/day vs only 1000 lists/day,
+// so one `.get("all")` per minute (1440/day) stays well within free limits.
 
 const REMINDER_OFFSETS_MIN = [5, 10, 15, 19];
+const ALL_KEY = "all";
+
+async function getAllReminders(env) {
+  const raw = await env.REMINDERS.get(ALL_KEY);
+  return raw ? JSON.parse(raw) : {};
+}
+
+async function saveAllReminders(env, data) {
+  await env.REMINDERS.put(ALL_KEY, JSON.stringify(data));
+}
 
 async function scheduleReminder(env, body) {
   if (!body || !body.reservation_id || !body.deadline_iso) {
@@ -159,22 +175,27 @@ async function scheduleReminder(env, body) {
     provider: body.provider || "korail",
     reminders,
   };
-  const ttlSec = Math.max(60, Math.floor((deadline - now) / 1000) + 300);
-  await env.REMINDERS.put(body.reservation_id, JSON.stringify(record), {
-    expirationTtl: ttlSec,
-  });
+  const all = await getAllReminders(env);
+  all[body.reservation_id] = record;
+  await saveAllReminders(env, all);
   console.log(`[${new Date().toISOString()}] scheduled ${reminders.length} reminders for ${body.reservation_id}`);
 }
 
 async function processReminders(env) {
-  const list = await env.REMINDERS.list();
+  const all = await getAllReminders(env);
+  const ids = Object.keys(all);
+  if (!ids.length) return;
   const now = Date.now();
-  for (const key of list.keys) {
-    const raw = await env.REMINDERS.get(key.name);
-    if (!raw) continue;
-    let record;
-    try { record = JSON.parse(raw); } catch { continue; }
-    let dirty = false;
+  let dirty = false;
+  for (const id of ids) {
+    const record = all[id];
+    // Auto-cleanup expired reservations (deadline + 5min passed)
+    const deadline = new Date(record.deadline_iso).getTime();
+    if (deadline + 300_000 < now) {
+      delete all[id];
+      dirty = true;
+      continue;
+    }
     for (const r of record.reminders) {
       if (r.sent || r.trigger_at_ms > now) continue;
       try {
@@ -186,16 +207,13 @@ async function processReminders(env) {
         // leave sent=false; will retry on next minute
       }
     }
-    if (dirty) {
-      const allSent = record.reminders.every(r => r.sent);
-      if (allSent) {
-        await env.REMINDERS.delete(key.name);
-      } else {
-        const ttlSec = Math.max(60, Math.floor((new Date(record.deadline_iso).getTime() - now) / 1000) + 300);
-        await env.REMINDERS.put(key.name, JSON.stringify(record), { expirationTtl: ttlSec });
-      }
+    // Remove once all reminders sent
+    if (record.reminders.every(r => r.sent)) {
+      delete all[id];
+      dirty = true;
     }
   }
+  if (dirty) await saveAllReminders(env, all);
 }
 
 function formatReminder(rec, reminder) {
