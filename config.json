@@ -65,7 +65,7 @@
     "poll_interval_mode": "range",
     "poll_interval_range": [
       15,
-      27
+      23
     ],
     "quiet_hours_start": "19:41",
     "quiet_hours_end": ""
