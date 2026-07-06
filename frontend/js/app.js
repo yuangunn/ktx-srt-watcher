@@ -360,8 +360,22 @@ function renderWatchCard(watch, state) {
   node.dataset.active = String(watch.active);
   $('.watch__stamp', node).textContent = stampLabel(watch);
   $('.badge--provider', node).textContent = watch.provider === 'srt' ? 'SRT' : 'KORAIL';
+  // Auto-reserve badge. If the worker self-disabled it after a successful
+  // reservation (tracked in state.auto_reserve_disabled), show a muted
+  // "완료" badge so the user knows it fired and can re-enable if needed.
   const autoBadge = $('.badge--auto-reserve', node);
-  if (autoBadge) autoBadge.hidden = !watch.auto_reserve;
+  if (autoBadge) {
+    const disabled = (state?.auto_reserve_disabled || []).includes(watch.id);
+    if (watch.auto_reserve && disabled) {
+      autoBadge.hidden = false;
+      autoBadge.textContent = '자동예약 완료';
+      autoBadge.dataset.done = '1';
+    } else {
+      autoBadge.hidden = !watch.auto_reserve;
+      autoBadge.textContent = '자동예약';
+      delete autoBadge.dataset.done;
+    }
+  }
   $('.watch__from', node).textContent = watch.from;
   $('.watch__to', node).textContent = watch.to;
   $('.watch__date', node).textContent = fmtDateLong(watch.date);
@@ -671,6 +685,8 @@ class App {
     if (toggle) toggle.checked = !!s.notify_empty_on_cron;
     const wait = $('#allow-waiting-toggle');
     if (wait) wait.checked = !!s.allow_waiting_list;
+    const renotify = $('#renotify-toggle');
+    if (renotify) renotify.checked = !!s.renotify_while_available;
     this._renderPollConfig(s);
     const qs = $('#quiet-start');
     const qe = $('#quiet-end');
@@ -858,6 +874,13 @@ class App {
       wait.addEventListener('change', async () => {
         ensure().allow_waiting_list = wait.checked;
         await this._save(`settings: allow_waiting_list = ${wait.checked}`);
+      });
+    }
+    const renotify = $('#renotify-toggle');
+    if (renotify) {
+      renotify.addEventListener('change', async () => {
+        ensure().renotify_while_available = renotify.checked;
+        await this._save(`settings: renotify_while_available = ${renotify.checked}`);
       });
     }
     // Poll interval: mode (fixed/range/choices) + per-mode inputs.
