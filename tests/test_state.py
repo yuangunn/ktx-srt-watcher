@@ -163,3 +163,43 @@ class TestPruneByDate:
         s = {"last_run": None, "watches": {"x": {"last_check": None, "notified_train_ids": ["a"]}}}
         state.prune_past_dates(s, today="2026-04-30")
         assert "x" in s["watches"]
+
+
+class TestPollHistory:
+    def test_record_poll_appends_entry(self):
+        s = {"last_run": None, "watches": {}}
+        state.record_poll(s, "2026-07-06T10:00:00Z", 0)
+        state.record_poll(s, "2026-07-06T10:20:00Z", 2)
+        assert s["poll_history"] == [
+            {"t": "2026-07-06T10:00:00Z", "seats": 0},
+            {"t": "2026-07-06T10:20:00Z", "seats": 2},
+        ]
+
+    def test_record_poll_caps_at_max_keeping_newest(self):
+        s = {}
+        for i in range(state.POLL_HISTORY_MAX + 50):
+            state.record_poll(s, f"t{i}", 0)
+        assert len(s["poll_history"]) == state.POLL_HISTORY_MAX
+        assert s["poll_history"][-1]["t"] == f"t{state.POLL_HISTORY_MAX + 49}"
+
+    def test_merge_unions_and_sorts_history(self):
+        ours = {"watches": {}, "poll_history": [
+            {"t": "2026-07-06T10:00:00Z", "seats": 0},
+            {"t": "2026-07-06T10:20:00Z", "seats": 2},
+        ]}
+        remote = {"watches": {}, "poll_history": [
+            {"t": "2026-07-06T10:00:00Z", "seats": 0},
+            {"t": "2026-07-06T10:10:00Z", "seats": 1},
+        ]}
+        merged = state.merge_states(ours, remote)["poll_history"]
+        assert [e["t"] for e in merged] == [
+            "2026-07-06T10:00:00Z", "2026-07-06T10:10:00Z", "2026-07-06T10:20:00Z",
+        ]
+
+    def test_merge_one_sided_history(self):
+        merged = state.merge_states({"watches": {}}, {"watches": {}, "poll_history": [{"t": "a", "seats": 0}]})
+        assert merged["poll_history"] == [{"t": "a", "seats": 0}]
+
+    def test_merge_no_history_key_when_both_empty(self):
+        merged = state.merge_states({"watches": {}}, {"watches": {}})
+        assert "poll_history" not in merged
