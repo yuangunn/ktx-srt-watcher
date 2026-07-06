@@ -6,11 +6,6 @@
       "notified_train_ids": [],
       "watch_date": "2026-05-25"
     },
-    "suseo-dongdaegu-20260515-pm": {
-      "last_check": "2026-04-30T07:51:41Z",
-      "notified_train_ids": [],
-      "watch_date": "2026-05-15"
-    },
     "부산-동탄-20260525-frfv": {
       "last_check": "2026-05-03T14:31:11Z",
       "notified_train_ids": [
@@ -50,6 +45,11 @@
         "2026-05-15-101-09:33",
         "2026-05-15-163-10:18"
       ],
+      "watch_date": "2026-05-15"
+    },
+    "suseo-dongdaegu-20260515-pm": {
+      "last_check": "2026-04-30T07:51:41Z",
+      "notified_train_ids": [],
       "watch_date": "2026-05-15"
     }
   }
