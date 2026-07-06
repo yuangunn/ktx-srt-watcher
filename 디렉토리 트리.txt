@@ -1,0 +1,27 @@
+ktx-srt-watcher/
+├── .github/workflows/watch.yml
+├── worker/
+│   ├── __init__.py
+│   ├── main.py                # entry point
+│   ├── adapters/
+│   │   ├── __init__.py
+│   │   ├── base.py            # 추상 Provider 인터페이스
+│   │   ├── korail.py          # korail2 wrapper
+│   │   └── srt.py             # SRT wrapper
+│   ├── notifier.py            # 텔레그램
+│   ├── matcher.py             # config 조건 → 열차 필터
+│   └── state.py               # state.json read/write
+├── frontend/                  # PWA (GitHub Pages)
+│   ├── index.html
+│   ├── manifest.json
+│   ├── sw.js
+│   └── app.js
+├── tests/
+│   ├── test_matcher.py
+│   └── test_state.py
+├── config.json
+├── state.json
+├── requirements.txt
+├── CLAUDE.md
+├── .gitignore
+└── README.md

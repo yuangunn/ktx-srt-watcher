@@ -1,0 +1,56 @@
+name = "ktx-srt-watcher-cron"
+main = "src/index.js"
+compatibility_date = "2026-04-30"
+
+# Cron schedules for this Worker (each fires the scheduled handler with
+# event.cron equal to the matching string):
+#   "*/5 * * * *"   → dispatchWatcher: triggers GHA repository_dispatch
+#                     every 5 min. This is the *trigger* granularity; the
+#                     watcher itself decides whether to actually poll based
+#                     on settings.poll_interval_mode (fixed/range/choices).
+#                     Fine granularity lets randomized intervals (e.g. 27m)
+#                     land close to target instead of snapping to 30m.
+#   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
+#                     any due payment-deadline reminders to Telegram
+#   "0 */6 * * *"   → heartbeatCheck: alerts if state.json::last_run is
+#                     stale (worker silently dead — PAT expired, GHA
+#                     suspended, code regression, etc.)
+#   "0 0 * * *"     → checkPATExpiration: 00:00 UTC = 09:00 KST. Reads
+#                     the GitHub-Authentication-Token-Expiration header
+#                     and warns 7 days before the worker's GITHUB_TOKEN
+#                     expires (silently breaking the bridge otherwise)
+#   "0 12 * * SUN"    → weeklySummary: Sunday 12:00 UTC = 21:00 KST.
+#                     Fetches Actions runs from past 7 days + state
+#                     watch count and Telegrams a digest so the user
+#                     knows the system is healthy and how busy it was.
+# Manual "지금 확인" / workflow_dispatch is unaffected. Repo is public so
+# GHA minutes are free/unlimited; the watcher's own throttle keeps the
+# actual Korail/SRT poll rate sane (min 10 min, see settings.poll_interval_mode).
+[triggers]
+crons = ["*/5 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
+
+[[kv_namespaces]]
+binding = "REMINDERS"
+id = "06eb524fc1df4e119f5cbfbc9e3b4af6"
+
+# STATE: mirror of state.json maintained by the GHA watcher after every
+# successful run. Public GET, auth-required PUT. PWA reads from here for
+# faster updates than GitHub Contents API; git's state.json is still the
+# canonical store and survives CF Worker outage.
+[[kv_namespaces]]
+binding = "STATE"
+id = "e637a6093c6749f183d9112b94eca3de"
+
+[vars]
+GITHUB_REPO = "yuangunn/ktx-srt-watcher"
+EVENT_TYPE = "cron-tick"
+# Secrets (set via:  npx wrangler secret put NAME)
+#   GITHUB_TOKEN        Fine-grained PAT, Contents:rw + Actions:rw on the repo
+#   TELEGRAM_BOT_TOKEN  Same bot used by the GHA watcher
+#   TELEGRAM_CHAT_ID    User's Telegram chat id
+#   REMINDER_TOKEN      Shared secret to authenticate worker.main → CF
+#                       calls to /reminder/schedule (random, opaque)
+
+[observability]
+enabled = true
+head_sampling_rate = 1

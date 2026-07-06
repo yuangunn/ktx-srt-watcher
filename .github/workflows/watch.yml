@@ -1,0 +1,89 @@
+name: ticket-watch
+
+on:
+  schedule:
+    # CF Worker bridge (cloudflare-worker/) is the primary cron at the
+    # rate set in wrangler.toml. This schedule is just a low-frequency
+    # fallback so the watcher still ticks if CF Worker is broken
+    # (PAT expired, account suspended, etc.). Each GHA run bills at
+    # least 1 min regardless of duration, so we keep this sparse —
+    # 4 runs/day fits comfortably under the 2,000 min/month free tier
+    # alongside the CF-driven runs.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:                   # PWA "지금 확인" / 수동 실행
+  repository_dispatch:
+    types: [cron-tick]                 # CF Worker 정확한 cron
+  push:
+    paths:
+      - 'config.json'                  # config 변경 즉시 1회 실행
+
+permissions:
+  contents: write             # state.json 커밋용
+
+concurrency:
+  group: ticket-watch
+  cancel-in-progress: false   # 중첩 실행 방지, 진행 중인 건 끝까지
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8        # cron 간격보다 짧게
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run watcher
+        env:
+          TZ: Asia/Seoul
+          KORAIL_ID: ${{ secrets.KORAIL_ID }}
+          KORAIL_PW: ${{ secrets.KORAIL_PW }}
+          SRT_ID: ${{ secrets.SRT_ID }}
+          SRT_PW: ${{ secrets.SRT_PW }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
+        run: python -m worker.main
+
+      - name: Commit state
+        run: |
+          set +e
+          git config user.name "ticket-watcher-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Snapshot our run's state before any git ops touch the working tree.
+          # Subsequent attempts will reset --hard to remote and merge our
+          # changes back in via worker.state's semantic merge.
+          cp state.json /tmp/state.ours.json
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main || { sleep $((attempt)); continue; }
+            git reset --hard origin/main
+            python -m worker.state merge /tmp/state.ours.json state.json
+            git add state.json
+            if git diff --staged --quiet; then
+              echo "state.json already reflects our run on attempt $attempt — nothing to commit"
+              # Mirror to CF KV anyway; PWA reads from there preferentially
+              python -m worker.state push-mirror state.json || true
+              exit 0
+            fi
+            git commit -m "chore(state): update [skip ci]"
+            if git push; then
+              echo "push succeeded on attempt $attempt"
+              python -m worker.state push-mirror state.json || true
+              exit 0
+            fi
+            echo "push attempt $attempt failed (likely concurrent push), retrying..."
+            sleep $((attempt))
+          done
+
+          echo "state.json push failed after 5 attempts" >&2
+          exit 1
