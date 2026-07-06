@@ -383,6 +383,11 @@ hr { border: 0; margin: 0; }
   padding: 2px 7px;
   border-radius: 6px;
 }
+/* fired + self-disabled — muted, no longer "armed" */
+.badge--auto-reserve[data-done] {
+  color: var(--ink4);
+  background: var(--fill);
+}
 
 /* ---------- empty ---------- */
 

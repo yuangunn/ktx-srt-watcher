@@ -61,6 +61,23 @@ def record_poll(state: dict[str, Any], when: str, seats_found: int) -> None:
         del hist[: len(hist) - POLL_HISTORY_MAX]
 
 
+def is_auto_reserve_disabled(state: dict[str, Any], watch_id: str) -> bool:
+    """True if auto-reserve was self-disabled for this watch after a success.
+
+    The worker can't persist config.json (only state.json is committed), so a
+    one-shot auto-reserve is remembered here instead. The PWA still shows the
+    config's auto_reserve flag; the user re-enables from the app when they want
+    another reservation.
+    """
+    return watch_id in (state.get("auto_reserve_disabled") or [])
+
+
+def disable_auto_reserve(state: dict[str, Any], watch_id: str) -> None:
+    lst = state.setdefault("auto_reserve_disabled", [])
+    if watch_id not in lst:
+        lst.append(watch_id)
+
+
 def mark_check(state: dict[str, Any], watch_id: str, when: str) -> None:
     _entry(state, watch_id)["last_check"] = when
 
@@ -74,6 +91,10 @@ def prune_past_dates(state: dict[str, Any], today: str) -> None:
     expired = [wid for wid, entry in watches.items() if entry.get("watch_date") and entry["watch_date"] < today]
     for wid in expired:
         del watches[wid]
+    # Drop stale auto-reserve-disable flags for watches that no longer exist.
+    disabled = state.get("auto_reserve_disabled")
+    if disabled:
+        state["auto_reserve_disabled"] = [w for w in disabled if w in watches]
 
 
 def _entry(state: dict[str, Any], watch_id: str) -> dict[str, Any]:
@@ -139,6 +160,14 @@ def merge_states(ours: dict[str, Any], remote: dict[str, Any]) -> dict[str, Any]
         merged_hist.append({"t": e.get("t"), "seats": int(e.get("seats") or 0)})
     if merged_hist:
         result["poll_history"] = merged_hist[-POLL_HISTORY_MAX:]
+
+    # auto_reserve_disabled: union (a disable on either side sticks).
+    disabled = sorted(
+        set(ours.get("auto_reserve_disabled") or [])
+        | set(remote.get("auto_reserve_disabled") or [])
+    )
+    if disabled:
+        result["auto_reserve_disabled"] = disabled
 
     # Carry over any top-level keys we don't know about (forward compat)
     for k, v in {**remote, **ours}.items():
