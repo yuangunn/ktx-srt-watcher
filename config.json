@@ -28,6 +28,34 @@
       "seat_class": "general",
       "auto_reserve": true,
       "active": true
+    },
+    {
+      "id": "수원-서울-20260715-o5d7",
+      "provider": "korail",
+      "from": "수원",
+      "to": "서울",
+      "date": "2026-07-15",
+      "time_min": "07:00",
+      "time_max": "08:00",
+      "train_types": [
+        "KTX",
+        "KTX-산천",
+        "KTX-청룡",
+        "KTX-이음",
+        "ITX-새마을",
+        "ITX-청춘",
+        "새마을호",
+        "무궁화호",
+        "누리로"
+      ],
+      "passengers": {
+        "adult": 1,
+        "child": 0,
+        "senior": 0
+      },
+      "seat_class": "general",
+      "auto_reserve": true,
+      "active": true
     }
   ],
   "settings": {
