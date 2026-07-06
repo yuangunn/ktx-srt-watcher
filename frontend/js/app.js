@@ -310,6 +310,32 @@ const EVENT_LABELS = {
   push: 'push',
 };
 
+// Compress a watch's train_types into short grouped chips for card display.
+// e.g. ['KTX','KTX-산천','KTX-청룡'] -> ['KTX(산천·청룡)']
+//      ['ITX-새마을','ITX-청춘']      -> ['ITX(새마을·청춘)']
+//      ['무궁화호']                   -> ['무궁화호'] (standalone kept as-is)
+// Grouping is display-only; the underlying config.train_types is unchanged.
+function groupTrainTypes(types) {
+  const families = [
+    { prefix: 'KTX', base: 'KTX' },
+    { prefix: 'ITX', base: 'ITX' },
+  ];
+  const out = [];
+  const used = new Set();
+  for (const fam of families) {
+    const members = types.filter(t => t === fam.base || t.startsWith(fam.prefix + '-'));
+    if (!members.length) continue;
+    members.forEach(m => used.add(m));
+    const subs = members
+      .filter(m => m !== fam.base)                 // drop the plain base
+      .map(m => m.slice(fam.prefix.length + 1));   // strip "KTX-" / "ITX-"
+    out.push(subs.length ? `${fam.base}(${subs.join('·')})` : fam.base);
+  }
+  // Any remaining standalone types (무궁화호, 새마을호, 누리로, SRT, …)
+  types.forEach(t => { if (!used.has(t)) out.push(t); });
+  return out;
+}
+
 // Short label shown inside the gradient stamp avatar.
 function stampLabel(watch) {
   if (watch.provider === 'srt') return 'SRT';
@@ -341,7 +367,7 @@ function renderWatchCard(watch, state) {
   $('.watch__date', node).textContent = fmtDateLong(watch.date);
   $('.watch__chip--time', node).textContent = `${watch.time_min} – ${watch.time_max}`;
   const types = $('.watch__meta-types', node);
-  watch.train_types.forEach(t => {
+  groupTrainTypes(watch.train_types).forEach(t => {
     const b = document.createElement('span');
     b.className = 'badge';
     b.textContent = t;

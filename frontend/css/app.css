@@ -34,6 +34,10 @@
   --srt-shadow: rgba(240, 68, 82, .4);
   --kor-tint: #3182F6;
   --srt-tint: #F04452;
+  --chip-time-bg: #E8F1FE;
+  --chip-time-ink: #1B64DA;
+  --chip-pax-bg: #E4F7EF;
+  --chip-pax-ink: #0E9E64;
 }
 
 :root[data-theme="dark"] {
@@ -60,6 +64,10 @@
   --logbg: #0C0E11;
   --logink: #D6DBE2;
   --scrim: rgba(0, 0, 0, .55);
+  --chip-time-bg: rgba(74, 144, 247, .18);
+  --chip-time-ink: #7FB2FB;
+  --chip-pax-bg: rgba(46, 211, 160, .16);
+  --chip-pax-ink: #52D9AC;
 }
 
 :root {
@@ -310,17 +318,27 @@ hr { border: 0; margin: 0; }
 .watch__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .watch__chip {
   font-size: 12px; font-weight: 600;
-  color: var(--ink3);
-  background: var(--fill);
   padding: 5px 10px;
   border-radius: 9px;
   white-space: nowrap;
 }
-.watch__chip--time { font-weight: 600; color: var(--ink2); }
+/* time — blue tint */
+.watch__chip--time {
+  font-weight: 700;
+  color: var(--chip-time-ink);
+  background: var(--chip-time-bg);
+}
+/* passengers — green tint */
+.watch__chip--pax {
+  font-weight: 600;
+  color: var(--chip-pax-ink);
+  background: var(--chip-pax-bg);
+}
+/* train types — neutral fill */
 .watch__meta-types { display: contents; }
 .watch__meta-types .badge {
   font-size: 12px; font-weight: 700;
-  color: var(--ink3);
+  color: var(--ink2);
   background: var(--fill);
   padding: 5px 10px;
   border-radius: 9px;
