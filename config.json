@@ -93,7 +93,7 @@
     "poll_interval_mode": "range",
     "poll_interval_range": [
       24,
-      26
+      36
     ],
     "quiet_hours_start": "",
     "quiet_hours_end": ""
