@@ -34,6 +34,11 @@ const RAIL_DATA = {
       { value: 'KTX-산천', label: 'KTX-산천', default: true },
       { value: 'KTX-청룡', label: 'KTX-청룡', default: false },
       { value: 'KTX-이음', label: 'KTX-이음', default: false },
+      { value: 'ITX-새마을', label: 'ITX-새마을', default: false },
+      { value: 'ITX-청춘', label: 'ITX-청춘', default: false },
+      { value: '새마을호', label: '새마을호', default: false },
+      { value: '무궁화호', label: '무궁화호', default: false },
+      { value: '누리로', label: '누리로', default: false },
     ],
   },
   srt: {
