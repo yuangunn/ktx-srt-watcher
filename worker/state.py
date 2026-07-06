@@ -42,6 +42,25 @@ def mark_run(state: dict[str, Any], when: str) -> None:
     state["last_run"] = when
 
 
+# Keep at most this many poll-history entries (≈ a month of real polls at
+# a 15-min cadence is ~2900, but stats only need 30 days; cap generously).
+POLL_HISTORY_MAX = 2000
+
+
+def record_poll(state: dict[str, Any], when: str, seats_found: int) -> None:
+    """Append one *actual* poll to poll_history.
+
+    Only non-skipped runs call this, so poll_history reflects real Korail/SRT
+    polls (not GHA trigger ticks). The PWA stats read this instead of counting
+    workflow runs, so throttled/skip runs never inflate the numbers.
+    Each entry: {"t": ISO8601, "seats": int}. Capped at POLL_HISTORY_MAX.
+    """
+    hist = state.setdefault("poll_history", [])
+    hist.append({"t": when, "seats": int(seats_found)})
+    if len(hist) > POLL_HISTORY_MAX:
+        del hist[: len(hist) - POLL_HISTORY_MAX]
+
+
 def mark_check(state: dict[str, Any], watch_id: str, when: str) -> None:
     _entry(state, watch_id)["last_check"] = when
 
@@ -104,6 +123,22 @@ def merge_states(ours: dict[str, Any], remote: dict[str, Any]) -> dict[str, Any]
         if watch_date:
             merged_watches[wid]["watch_date"] = watch_date
     result["watches"] = merged_watches
+
+    # poll_history: union by timestamp, chronologically sorted, capped.
+    # Concurrent runs may each append; dedupe on (t, seats) so a double-push
+    # doesn't count a poll twice.
+    o_hist = ours.get("poll_history") or []
+    r_hist = remote.get("poll_history") or []
+    seen: set[tuple[str, int]] = set()
+    merged_hist: list[dict[str, Any]] = []
+    for e in sorted(o_hist + r_hist, key=lambda x: x.get("t") or ""):
+        key = (e.get("t") or "", int(e.get("seats") or 0))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_hist.append({"t": e.get("t"), "seats": int(e.get("seats") or 0)})
+    if merged_hist:
+        result["poll_history"] = merged_hist[-POLL_HISTORY_MAX:]
 
     # Carry over any top-level keys we don't know about (forward compat)
     for k, v in {**remote, **ours}.items():
