@@ -97,6 +97,6 @@
     ],
     "quiet_hours_start": "",
     "quiet_hours_end": "",
-    "renotify_while_available": true
+    "renotify_while_available": false
   }
 }
