@@ -126,3 +126,21 @@ class TestFindNewTrains:
         special = _train(seats_general=0, seats_special=1, raw_id="s")
         result = find_new_trains(watch, [general, special], notified_ids=set())
         assert result == [general, special]
+
+
+def test_renotify_returns_already_notified_trains():
+    from worker.matcher import find_new_trains
+    from worker.models import Train, Watch
+    w = Watch.model_validate({
+        "id": "w", "provider": "korail", "from": "수원", "to": "서울",
+        "date": "2026-07-16", "time_min": "11:00", "time_max": "12:00",
+        "train_types": ["KTX"], "passengers": {"adult": 1}, "seat_class": "general",
+    })
+    t = Train(provider="korail", train_no="122", train_type="KTX", dep_station="수원",
+              arr_station="서울", date="2026-07-16", dep_time="11:01", arr_time="12:00",
+              seats_general=1, seats_special=0, raw_id="2026-07-16-122-11:01")
+    notified = {"2026-07-16-122-11:01"}
+    # default: dedup excludes it
+    assert find_new_trains(w, [t], notified) == []
+    # renotify: included despite being notified
+    assert find_new_trains(w, [t], notified, renotify=True) == [t]

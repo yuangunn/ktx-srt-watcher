@@ -149,6 +149,7 @@ def main() -> int:
         notify_reserve_success_fn=notifier.notify_reservation_success,
         notify_reserve_failure_fn=notifier.notify_reservation_failure,
         schedule_reminders_fn=notifier.schedule_reminders,
+        notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
         now_iso=now_iso,
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
@@ -169,11 +170,13 @@ def run_watches(
     notify_reserve_success_fn: ReserveSuccessFn | None = None,
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
     schedule_reminders_fn: ScheduleRemindersFn | None = None,
+    notify_auto_reserve_disabled_fn: Callable[[Watch], None] | None = None,
     event_name: str | None = None,
 ) -> None:
     settings_pre = config.get("settings") or {}
     poll_interval_min = int(settings_pre.get("poll_interval_min") or 0)
     allow_waiting_list = bool(settings_pre.get("allow_waiting_list", False))
+    renotify = bool(settings_pre.get("renotify_while_available", False))
     quiet_start = settings_pre.get("quiet_hours_start") or None
     quiet_end = settings_pre.get("quiet_hours_end") or None
     is_manual_pre = event_name == "workflow_dispatch"
@@ -223,8 +226,10 @@ def run_watches(
                     notify_reserve_success_fn=notify_reserve_success_fn,
                     notify_reserve_failure_fn=notify_reserve_failure_fn,
                     schedule_reminders_fn=schedule_reminders_fn,
+                    notify_auto_reserve_disabled_fn=notify_auto_reserve_disabled_fn,
                     allow_waiting=allow_waiting_list,
                     silent=silent_now,
+                    renotify=renotify,
                 )
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
@@ -258,28 +263,39 @@ def _process_watch(
     notify_reserve_success_fn: ReserveSuccessFn | None = None,
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
     schedule_reminders_fn: ScheduleRemindersFn | None = None,
+    notify_auto_reserve_disabled_fn: Callable[[Watch], None] | None = None,
     allow_waiting: bool = False,
     silent: bool = False,
+    renotify: bool = False,
 ) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
 
     notified = state_mod.get_notified_ids(state, watch.id)
     trains = provider.search(watch)
-    new_trains = find_new_trains(watch, trains, notified)
+    # renotify: alert on every poll while seats remain (dedup skipped). We
+    # still record notified_train_ids so turning the toggle back off resumes
+    # normal dedup cleanly.
+    new_trains = find_new_trains(watch, trains, notified, renotify=renotify)
 
     if not new_trains:
         log.info("[%s] watch %s: no new seats (%d searched)", provider.name, watch.id, len(trains))
         return 0
 
-    log.info("[%s] watch %s: %d new seat(s)", provider.name, watch.id, len(new_trains))
+    log.info("[%s] watch %s: %d seat(s)%s", provider.name, watch.id, len(new_trains),
+             " (renotify)" if renotify else " new")
     try:
         notify_fn(watch, new_trains, silent=silent)
     except TypeError:
         notify_fn(watch, new_trains)
     state_mod.add_notified_ids(state, watch.id, [t.raw_id for t in new_trains])
 
-    if watch.auto_reserve:
+    # Auto-reserve is one-shot: after a successful reservation the watch's
+    # auto_reserve is self-disabled (recorded in state, since the worker can't
+    # edit config.json). This prevents re-reserving the same seat on every
+    # renotify poll, and lets the user re-enable from the PWA when they want
+    # another. A prior success in state short-circuits here.
+    if watch.auto_reserve and not state_mod.is_auto_reserve_disabled(state, watch.id):
         # Try up to MAX_RESERVE_CANDIDATES trains in case earlier candidates
         # got snatched between our search and the reserve call (anti-bot
         # macros / faster bots / human race wins). Stop on first success.
@@ -323,6 +339,15 @@ def _process_watch(
                         schedule_reminders_fn(watch, chosen, reservation)
                     except Exception as e:
                         log.exception("schedule_reminders failed for %s: %s", reservation.reservation_id, e)
+                # One-shot: disable auto-reserve for this watch so we don't
+                # re-reserve on later polls (esp. with renotify on). The user
+                # re-enables from the PWA if they want another.
+                state_mod.disable_auto_reserve(state, watch.id)
+                if notify_auto_reserve_disabled_fn is not None:
+                    try:
+                        notify_auto_reserve_disabled_fn(watch)
+                    except Exception as e:
+                        log.exception("auto-reserve-disabled notify failed: %s", e)
         elif last_err is not None:
             target, err = last_err
             log.exception(

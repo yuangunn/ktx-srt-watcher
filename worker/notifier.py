@@ -160,6 +160,26 @@ def notify_reservation_failure(
     send_telegram(bot_token, chat_id, text, session=session)
 
 
+def format_auto_reserve_disabled(watch: Watch) -> str:
+    return (
+        f"🔕 자동예약 비활성화\n"
+        f"\n"
+        f"{watch.from_}→{watch.to} {watch.date}\n"
+        f"\n"
+        f"자동예약이 실행되어 자동예약 기능이 비활성 되었습니다. "
+        f"추가 자동예약이 필요하면 자동예약 기능을 다시 켜주세요."
+    )
+
+
+def notify_auto_reserve_disabled(
+    watch: Watch, *, session: _PostSession | None = None,
+) -> None:
+    bot_token = _require_env("TELEGRAM_BOT_TOKEN")
+    chat_id = _require_env("TELEGRAM_CHAT_ID")
+    text = format_auto_reserve_disabled(watch)
+    send_telegram(bot_token, chat_id, text, session=session)
+
+
 def _fmt_deadline(iso: str | None) -> str:
     """Render a timezone-aware ISO timestamp as KST HH:MM (UTC+9).
 

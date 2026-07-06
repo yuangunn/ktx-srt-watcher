@@ -203,3 +203,29 @@ class TestPollHistory:
     def test_merge_no_history_key_when_both_empty(self):
         merged = state.merge_states({"watches": {}}, {"watches": {}})
         assert "poll_history" not in merged
+
+
+class TestAutoReserveDisabled:
+    def test_disable_and_query(self):
+        s = {}
+        assert state.is_auto_reserve_disabled(s, "w1") is False
+        state.disable_auto_reserve(s, "w1")
+        assert state.is_auto_reserve_disabled(s, "w1") is True
+        # idempotent
+        state.disable_auto_reserve(s, "w1")
+        assert s["auto_reserve_disabled"] == ["w1"]
+
+    def test_merge_unions_disabled(self):
+        a = {"watches": {}, "auto_reserve_disabled": ["w1"]}
+        b = {"watches": {}, "auto_reserve_disabled": ["w2"]}
+        merged = state.merge_states(a, b)
+        assert sorted(merged["auto_reserve_disabled"]) == ["w1", "w2"]
+
+    def test_prune_drops_disabled_for_removed_watch(self):
+        s = {
+            "last_run": None,
+            "watches": {"keep": {"watch_date": "2026-12-25"}},
+            "auto_reserve_disabled": ["keep", "gone"],
+        }
+        state.prune_past_dates(s, today="2026-04-30")
+        assert s["auto_reserve_disabled"] == ["keep"]

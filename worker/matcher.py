@@ -3,8 +3,23 @@ from __future__ import annotations
 from .models import Train, Watch
 
 
-def find_new_trains(watch: Watch, trains: list[Train], notified_ids: set[str]) -> list[Train]:
-    return [t for t in trains if _matches(t, watch) and t.raw_id not in notified_ids]
+def find_new_trains(
+    watch: Watch,
+    trains: list[Train],
+    notified_ids: set[str],
+    *,
+    renotify: bool = False,
+) -> list[Train]:
+    """Trains matching the watch that have seats.
+
+    Normally excludes already-notified trains (dedup, avoids Telegram spam).
+    When renotify=True the dedup is skipped, so a train with seats is returned
+    on every poll while it stays available — the user opted into repeat alerts.
+    """
+    return [
+        t for t in trains
+        if _matches(t, watch) and (renotify or t.raw_id not in notified_ids)
+    ]
 
 
 def _matches(train: Train, watch: Watch) -> bool:
