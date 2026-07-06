@@ -229,6 +229,10 @@ def run_watches(
             except Exception as e:
                 log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
 
+    # Record this *actual* poll (skip runs returned earlier, so they're never
+    # counted). PWA stats read poll_history instead of GHA run counts.
+    state_mod.record_poll(state, now_iso, new_train_total)
+
     settings = config.get("settings") or {}
     notify_empty_on_cron = bool(settings.get("notify_empty_on_cron", False))
     is_manual = event_name == "workflow_dispatch"

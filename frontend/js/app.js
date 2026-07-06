@@ -405,6 +405,20 @@ function renderRunRow(run, onOpen) {
   return node;
 }
 
+// A row for one actual poll (from state.poll_history). Green dot when seats
+// were found that poll, neutral otherwise. Non-interactive (no GHA log link).
+function renderPollRow(entry) {
+  const node = tpl('tpl-run-row').firstElementChild;
+  const seats = entry.seats || 0;
+  node.querySelector('.run-row__status').dataset.conclusion = seats > 0 ? 'success' : 'skipped';
+  node.querySelector('.run-row__time').textContent = fmtRunTime(entry.t);
+  node.querySelector('.run-row__meta').textContent = seats > 0 ? `좌석 ${seats}건 발견` : '잔여 없음';
+  const link = node.querySelector('.run-row__link');
+  if (link) link.remove();
+  node.style.cursor = 'default';
+  return node;
+}
+
 // Trim a GitHub Actions raw log blob to just the *python stdout* of the
 // "Run watcher" step. Skips the noisy `env:` / `shell:` setup block that
 // GitHub injects at the start of every step group, so the modal shows
@@ -692,110 +706,93 @@ class App {
     });
   }
 
-  async _loadRuns() {
+  _loadRuns() {
     const list = $('#run-list');
     if (!list) return;
-    try {
-      const runs = await this.gh.listRuns('watch.yml', 6);
-      list.innerHTML = '';
-      if (!runs.length) {
-        const li = document.createElement('li');
-        li.className = 'run-list--empty';
-        li.textContent = '실행 기록 없음';
-        list.appendChild(li);
-        return;
-      }
-      runs.forEach(r => list.appendChild(renderRunRow(r, run => this._showRunLogs(run))));
-    } catch (e) {
-      if (this._isAuthError(e)) {
-        this._handleAuthFailure();
-        return;
-      }
-      list.innerHTML = '';
+    // Show recent *actual* polls from state.poll_history (skip/throttled runs
+    // are never recorded there), newest first.
+    const hist = Array.isArray(this.state?.poll_history) ? this.state.poll_history : [];
+    const recent = hist.slice(-8).reverse();
+    list.innerHTML = '';
+    if (!recent.length) {
       const li = document.createElement('li');
       li.className = 'run-list--empty';
-      li.textContent = `실행 목록 로드 실패 — ${e.message}`;
+      li.textContent = '폴링 기록 없음';
       list.appendChild(li);
+      return;
     }
+    recent.forEach(e => list.appendChild(renderPollRow(e)));
   }
 
-  async _loadStats() {
+  _loadStats() {
     const grid = $('#stats-grid');
     const chart = $('#stats-chart');
     if (!grid || !chart) return;
-    try {
-      // Pull more runs than the recent-runs panel — 100 covers about a
-      // week's worth at 30-min cadence + manual triggers.
-      const runs = await this.gh.listRuns('watch.yml', 100);
-      const now = Date.now();
-      const dayMs = 86_400_000;
-      const week = runs.filter(r => now - new Date(r.started).getTime() < 7 * dayMs);
-      const month = runs.filter(r => now - new Date(r.started).getTime() < 30 * dayMs);
-      const success = week.filter(r => r.conclusion === 'success').length;
-      const failed = week.filter(r => r.conclusion === 'failure').length;
+    // Stats come from state.poll_history — the worker records only *actual*
+    // polls there (skip/throttled runs never append), so counts reflect real
+    // Korail/SRT polling, not GHA trigger ticks. No network call needed.
+    const hist = Array.isArray(this.state?.poll_history) ? this.state.poll_history : [];
+    const now = Date.now();
+    const dayMs = 86_400_000;
+    const ts = e => new Date(e?.t).getTime();
+    const week = hist.filter(e => now - ts(e) < 7 * dayMs);
+    const month = hist.filter(e => now - ts(e) < 30 * dayMs);
+    const weekHits = week.filter(e => (e.seats || 0) > 0).length;
 
-      let notified = 0;
-      const watches = this.state?.watches || {};
-      for (const w of Object.values(watches)) {
-        notified += (w.notified_train_ids || []).length;
-      }
-      const activeWatches = (this.config.watches || []).filter(w => w.active !== false).length;
-
-      // 7-day buckets: index 0 = 6 days ago, index 6 = today
-      const buckets = Array.from({ length: 7 }, () => ({ count: 0, failed: 0 }));
-      for (const r of week) {
-        const ageDays = Math.floor((now - new Date(r.started).getTime()) / dayMs);
-        if (ageDays < 7) {
-          const idx = 6 - ageDays;
-          buckets[idx].count++;
-          if (r.conclusion === 'failure') buckets[idx].failed++;
-        }
-      }
-      const maxCount = Math.max(1, ...buckets.map(b => b.count));
-      const dayLabels = ['일','월','화','수','목','금','토'];
-
-      grid.innerHTML = `
-        <div class="stat">
-          <div class="stat__num">${week.length}</div>
-          <div class="stat__label">최근 7일 실행</div>
-          <div class="stat__sub">성공 ${success}${failed ? ` · 실패 ${failed}` : ''}</div>
-        </div>
-        <div class="stat">
-          <div class="stat__num">${month.length}</div>
-          <div class="stat__label">최근 30일</div>
-          <div class="stat__sub">&nbsp;</div>
-        </div>
-        <div class="stat stat--primary">
-          <div class="stat__num">${notified}</div>
-          <div class="stat__label">누적 알림 좌석</div>
-          <div class="stat__sub">&nbsp;</div>
-        </div>
-        <div class="stat stat--ok">
-          <div class="stat__num">${activeWatches}</div>
-          <div class="stat__label">활성 워치</div>
-          <div class="stat__sub">&nbsp;</div>
-        </div>
-      `;
-
-      chart.innerHTML = buckets.map((b, i) => {
-        const h = Math.max(4, Math.round((b.count / maxCount) * 100));
-        const dayOfWeek = new Date(now - (6 - i) * dayMs).getDay();
-        const isToday = i === 6;
-        const failed = b.failed > 0 ? '1' : '0';
-        const title = `${b.count}회${b.failed ? ` (${b.failed} 실패)` : ''}`;
-        return `<div class="stats-bar" data-today="${isToday ? '1' : '0'}" style="--h: ${h}%" title="${title}">
-            <div class="stats-bar__fill" data-failed="${failed}"></div>
-            <div class="stats-bar__label">${dayLabels[dayOfWeek]}</div>
-          </div>`;
-      }).join('');
-    } catch (e) {
-      if (this._isAuthError(e)) {
-        this._handleAuthFailure();
-        return;
-      }
-      // Silent fail — stats tab shows whatever rendered
-      console.warn('stats load failed', e);
+    let notified = 0;
+    const watches = this.state?.watches || {};
+    for (const w of Object.values(watches)) {
+      notified += (w.notified_train_ids || []).length;
     }
+    const activeWatches = (this.config.watches || []).filter(w => w.active !== false).length;
+
+    // 7-day buckets: index 0 = 6 days ago, index 6 = today
+    const buckets = Array.from({ length: 7 }, () => ({ count: 0, hits: 0 }));
+    for (const e of week) {
+      const ageDays = Math.floor((now - ts(e)) / dayMs);
+      if (ageDays >= 0 && ageDays < 7) {
+        const idx = 6 - ageDays;
+        buckets[idx].count++;
+        if ((e.seats || 0) > 0) buckets[idx].hits++;
+      }
+    }
+    const maxCount = Math.max(1, ...buckets.map(b => b.count));
+    const dayLabels = ['일','월','화','수','목','금','토'];
+
+    grid.innerHTML = `
+      <div class="stat">
+        <div class="stat__num">${week.length}</div>
+        <div class="stat__label">최근 7일 폴링</div>
+        <div class="stat__sub">${weekHits ? `좌석 발견 ${weekHits}회` : ' '}</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num">${month.length}</div>
+        <div class="stat__label">최근 30일 폴링</div>
+        <div class="stat__sub">&nbsp;</div>
+      </div>
+      <div class="stat stat--primary">
+        <div class="stat__num">${notified}</div>
+        <div class="stat__label">누적 알림 좌석</div>
+        <div class="stat__sub">&nbsp;</div>
+      </div>
+      <div class="stat stat--ok">
+        <div class="stat__num">${activeWatches}</div>
+        <div class="stat__label">활성 워치</div>
+        <div class="stat__sub">&nbsp;</div>
+      </div>
+    `;
+
+    chart.innerHTML = buckets.map((b, i) => {
+      const h = Math.max(4, Math.round((b.count / maxCount) * 100));
+      const dayOfWeek = new Date(now - (6 - i) * dayMs).getDay();
+      const isToday = i === 6;
+      const hit = b.hits > 0 ? '1' : '0';
+      const title = `폴링 ${b.count}회${b.hits ? ` · 좌석 ${b.hits}회` : ''}`;
+      return `<div class="stats-bar" data-today="${isToday ? '1' : '0'}" style="--h: ${h}%" title="${title}">
+          <div class="stats-bar__fill" data-hit="${hit}"></div>
+          <div class="stats-bar__label">${dayLabels[dayOfWeek]}</div>
+        </div>`;
+    }).join('');
   }
 
   _startCountdown() {

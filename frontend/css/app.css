@@ -457,7 +457,7 @@ hr { border: 0; margin: 0; }
   background: var(--ink4);
   border-radius: 6px 6px 3px 3px;
 }
-.stats-bar__fill[data-failed="1"] { background: var(--danger); }
+.stats-bar__fill[data-hit="1"] { background: var(--ok); }
 .stats-bar[data-today="1"] .stats-bar__fill { background: var(--primary); }
 .stats-bar__label { font-size: 10px; font-family: var(--f-mono); font-weight: 500; color: var(--ink4); }
 .stats-bar[data-today="1"] .stats-bar__label { font-weight: 700; color: var(--ink); }
