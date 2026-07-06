@@ -90,7 +90,7 @@
     "notify_empty_on_cron": false,
     "poll_interval_min": 30,
     "allow_waiting_list": true,
-    "poll_interval_mode": "choices",
+    "poll_interval_mode": "fixed",
     "poll_interval_range": [
       24,
       36
