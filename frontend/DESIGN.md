@@ -1,38 +1,51 @@
 ---
 name: 발권창구 (Bal-Gwon-Chang-Gu)
-theme: fintech light (Toss-inspired) — light page, white cards, soft shadows, blue accent
-colors:
-  surface: "#F2F4F6"
-  surface-dim: "#E8EBED"
-  surface-bright: "#FFFFFF"
-  surface-container-lowest: "#FFFFFF"
-  surface-container-low: "#FFFFFF"
-  surface-container: "#FFFFFF"
-  surface-container-high: "#FFFFFF"
-  surface-container-highest: "#E5E8EB"
-  on-surface: "#191F28"
-  on-surface-variant: "#8B95A1"
-  outline: "#D1D6DB"
-  outline-variant: "#EAEDF0"
-  primary: "#3182F6"
-  on-primary: "#FFFFFF"
+theme: fintech (Toss-inspired) — bottom-tab IA, polling hero card, gradient provider
+  stamps, soft shadows, blue accent. Light + dark via [data-theme] on <html>.
+# Tokens below are authored in css/app.css :root / :root[data-theme="dark"].
+# This block mirrors the light set for reference; dark set follows in comments.
+colors-light:
+  page: "#F2F4F6"          # screen background
+  card: "#FFFFFF"          # cards / sheet / tabbar
+  fill: "#F1F3F5"          # inputs / chips
+  border: "#EBEEF1"        # hairline
+  track: "#E5E8EB"         # toggle-off track
+  ink: "#191F28"           # emphasis text
+  ink2: "#4E5968"          # body
+  ink3: "#6B7684"          # secondary
+  ink4: "#98A0AB"          # faint / labels
+  primary: "#3182F6"       # Toss blue
   primary-dim: "#1B64DA"
-  secondary: "#3182F6"
-  secondary-container: "#E8F1FE"
-  on-secondary-container: "#1B64DA"
-  tertiary: "#F04452"
-  tertiary-container: "#FDECEE"
-  on-tertiary-container: "#E02936"
-  error: "#F04452"
-  ember: "#FF6B00"
-  success: "#15C47E"
-  background: "#F2F4F6"
-  on-background: "#191F28"
+  primary-weak: "#E8F1FE"
+  danger: "#F04452"        # SRT / delete / failure
+  ok: "#15C47E"            # success
+  ember: "#FF6B00"         # polling pulse
+  logbg: "#111418"
+  logink: "#E5E8EB"
+colors-dark:
+  page: "#101215"
+  card: "#1B1E24"
+  sheet: "#22262E"
+  fill: "#23272E"
+  border: "rgba(255,255,255,.08)"
+  track: "#333A44"
+  ink: "#F3F5F8"
+  ink2: "#C4CBD4"
+  ink3: "#9AA3AF"
+  ink4: "#6C7480"
+  primary: "#4A90F7"
+  danger: "#FF6B78"
+  ok: "#2ED3A0"
+  ember: "#FF8A3D"
+  logbg: "#0C0E11"
+  logink: "#D6DBE2"
+# provider gradients (stamp avatars):
+#   KORAIL: linear-gradient(135deg, #3182F6, #69A7FF)  shadow rgba(49,130,246,.4)
+#   SRT:    linear-gradient(135deg, #F04452, #FF7E88)  shadow rgba(240,68,82,.4)
 # elevation via shadows, not borders:
-#   sm: 0 1px 2px rgba(0,27,55,.04), 0 2px 6px rgba(0,27,55,.05)
-#   md: 0 2px 6px rgba(0,27,55,.05), 0 8px 20px rgba(0,27,55,.07)
-#   lg: 0 6px 16px rgba(0,27,55,.08), 0 16px 40px rgba(0,27,55,.12)
-#   primary: 0 6px 18px rgba(49,130,246,.32)
+#   light: 0 1px 2px rgba(0,27,55,.04), 0 6px 20px rgba(0,27,55,.06)
+#   dark:  0 1px 2px rgba(0,0,0,.2),   0 8px 22px rgba(0,0,0,.30)
+#   primary-glow: 0 6px 18px rgba(49,130,246,.30)
 typography:
   display-lg:
     fontFamily: Bricolage Grotesque
