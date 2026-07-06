@@ -66,6 +66,8 @@
     "poll_interval_range": [
       21,
       27
-    ]
+    ],
+    "quiet_hours_start": "19:41",
+    "quiet_hours_end": ""
   }
 }
