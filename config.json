@@ -65,7 +65,7 @@
     "poll_interval_mode": "range",
     "poll_interval_range": [
       21,
-      24
+      27
     ]
   }
 }
