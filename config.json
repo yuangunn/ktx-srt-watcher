@@ -92,8 +92,8 @@
     "allow_waiting_list": true,
     "poll_interval_mode": "range",
     "poll_interval_range": [
-      15,
-      25
+      14,
+      26
     ],
     "quiet_hours_start": "",
     "quiet_hours_end": ""
