@@ -6,7 +6,24 @@
 // ============================================================================
 
 const STORAGE_KEY = 'balgwon.config';
+const THEME_KEY = 'balgwon:theme';
 const FETCH_HEADERS = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+
+// ----- theme ----------------------------------------------------------------
+// Light/dark via [data-theme] on <html>. Persisted per-device; defaults to
+// the system preference. theme-color meta is kept in sync with --page.
+const THEME_PAGE = { light: '#F2F4F6', dark: '#101215' };
+function loadTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_PAGE[theme] || THEME_PAGE.light);
+}
+function saveTheme(theme) { localStorage.setItem(THEME_KEY, theme); }
 
 // ----- rail data ------------------------------------------------------------
 // Curated from Korean Wikipedia (KTX / 수서고속철도). Includes every station
@@ -269,14 +286,6 @@ function nextTickEpoch(intervalMin, now = Date.now()) {
   return Math.ceil((now + 1) / intervalMs) * intervalMs;
 }
 
-function fmtCountdown(ms) {
-  if (ms <= 0) return '확인 중…';
-  const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `다음 ${min}:${String(sec).padStart(2, '0')} 후`;
-}
-
 function fmtRunTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -301,29 +310,46 @@ const EVENT_LABELS = {
   push: 'push',
 };
 
+// Short label shown inside the gradient stamp avatar.
+function stampLabel(watch) {
+  if (watch.provider === 'srt') return 'SRT';
+  const types = watch.train_types || [];
+  // Prefer a distinctive sub-brand when the watch is exclusively that type.
+  if (types.length === 1) {
+    const t = types[0];
+    if (t === 'KTX-이음') return '이음';
+    if (t === 'KTX-청룡') return '청룡';
+    if (t === 'ITX-새마을' || t === 'ITX-청춘') return 'ITX';
+    if (t === '무궁화호') return '무궁';
+    if (t === '새마을호') return '새마';
+    if (t === '누리로') return '누리';
+  }
+  return 'KTX';
+}
+
 function renderWatchCard(watch, state) {
   const node = tpl('tpl-watch').firstElementChild;
   node.dataset.watchId = watch.id;
   node.dataset.provider = watch.provider;
   node.dataset.active = String(watch.active);
+  $('.watch__stamp', node).textContent = stampLabel(watch);
   $('.badge--provider', node).textContent = watch.provider === 'srt' ? 'SRT' : 'KORAIL';
   const autoBadge = $('.badge--auto-reserve', node);
   if (autoBadge) autoBadge.hidden = !watch.auto_reserve;
   $('.watch__from', node).textContent = watch.from;
   $('.watch__to', node).textContent = watch.to;
   $('.watch__date', node).textContent = fmtDateLong(watch.date);
-  $$('.watch__meta-row', node)[0].querySelector('.watch__meta-value').textContent =
-    `${watch.time_min} – ${watch.time_max}`;
-  const types = $$('.watch__meta-row', node)[1].querySelector('.watch__meta-types');
+  $('.watch__chip--time', node).textContent = `${watch.time_min} – ${watch.time_max}`;
+  const types = $('.watch__meta-types', node);
   watch.train_types.forEach(t => {
     const b = document.createElement('span');
     b.className = 'badge';
     b.textContent = t;
     types.appendChild(b);
   });
-  $$('.watch__meta-row', node)[2].querySelector('.watch__meta-value').textContent = fmtPassengers(watch.passengers);
+  $('.watch__chip--pax', node).textContent = fmtPassengers(watch.passengers);
   const lastCheck = state?.watches?.[watch.id]?.last_check;
-  $('.watch__last-check', node).textContent = `마지막 확인 · ${fmtRelative(lastCheck)}`;
+  $('.watch__last-check', node).textContent = `확인 · ${fmtRelative(lastCheck)}`;
   const toggle = $('.toggle__input', node);
   toggle.checked = watch.active;
   return node;
@@ -407,6 +433,7 @@ class App {
     this.configSha = null;
     this.cronIntervalMin = 10;
     this._countdownTimer = null;
+    this.tab = 'watch';
     // CF Worker URL for state mirror reads (optional; falls back to GitHub)
     const meta = document.querySelector('meta[name="cf-worker-url"]');
     this._cfWorkerUrl = (meta?.content || '').trim();
@@ -416,14 +443,58 @@ class App {
     document.getElementById('app').innerHTML = '';
     document.getElementById('app').appendChild(tpl('tpl-shell'));
 
+    this._wireTabs();
+    this._wireTheme();
     this._wireFab();
     this._wireSheet();
     this._wireCheckNow();
     this._wireSettings();
     this._wireLogSheet();
     this._wireRefresh();
+    this._setTab('watch');
     await this._loadAll();
     this._startCountdown();
+  }
+
+  _wireTabs() {
+    $$('.tabbar__item').forEach(btn => {
+      btn.addEventListener('click', () => this._setTab(btn.dataset.tab));
+    });
+  }
+
+  _setTab(tab) {
+    this.tab = tab;
+    const titles = {
+      watch: ['발권창구', 'cancel-seat watcher'],
+      stats: ['통계', 'stats & runs'],
+      settings: ['설정', 'preferences'],
+    };
+    const [title, sub] = titles[tab] || titles.watch;
+    const titleEl = $('#tab-title');
+    if (titleEl) titleEl.textContent = title;
+    // Header sub keeps the repo/last-run status on the watch tab, section name elsewhere
+    if (tab !== 'watch') { const s = $('#header-sub'); if (s) s.textContent = sub; }
+    else this._renderHeader();
+    $$('.tab-section').forEach(sec => { sec.hidden = sec.dataset.tab !== tab; });
+    $$('.tabbar__item').forEach(b => {
+      if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
+    const fab = $('#fab-add');
+    if (fab) fab.hidden = tab !== 'watch';
+    const scroll = $('#scroll-body');
+    if (scroll) scroll.scrollTop = 0;
+  }
+
+  _wireTheme() {
+    const toggle = $('#theme-toggle');
+    if (!toggle) return;
+    toggle.checked = (document.documentElement.getAttribute('data-theme') === 'dark');
+    toggle.addEventListener('change', () => {
+      const theme = toggle.checked ? 'dark' : 'light';
+      applyTheme(theme);
+      saveTheme(theme);
+    });
   }
   _wireRefresh() {
     const btn = $('#refresh-btn');
@@ -523,23 +594,25 @@ class App {
     const sub = $('#header-sub');
     const pulse = $('#poll-pulse');
     const lr = $('#last-run');
+    if (this.tab === 'watch' && sub) sub.textContent = lastRun ? `${this.gh.repo}` : 'cancel-seat watcher';
     if (!lastRun) {
-      sub.textContent = 'cancel-seat watcher';
-      lr.textContent = '— · 아직 실행 없음';
-      pulse.dataset.state = 'idle';
+      if (lr) lr.textContent = '아직 실행 없음';
+      if (pulse) pulse.dataset.state = 'idle';
       return;
     }
     const ageMs = Date.now() - new Date(lastRun).getTime();
     const recent = ageMs < 15 * 60 * 1000;
-    pulse.dataset.state = recent ? 'active' : 'idle';
-    lr.textContent = `polling · ${fmtRelative(lastRun)}`;
-    sub.textContent = `${this.gh.repo}`;
+    if (pulse) pulse.dataset.state = recent ? 'active' : 'idle';
+    if (lr) lr.textContent = `${fmtRelative(lastRun)} 폴링`;
   }
 
   _renderWatches() {
     const root = $('#watches');
     root.innerHTML = '';
-    if (!this.config.watches?.length) {
+    const count = this.config.watches?.length || 0;
+    const countEl = $('#watch-count');
+    if (countEl) countEl.textContent = `${count}개`;
+    if (!count) {
       root.appendChild(renderEmpty(() => this._openSheet()));
       return;
     }
@@ -585,9 +658,12 @@ class App {
   _applyPollMode(mode) {
     const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
     show('#poll-fixed-field', mode === 'fixed');
-    show('#poll-range-min-field', mode === 'range');
-    show('#poll-range-max-field', mode === 'range');
+    show('#poll-range-field', mode === 'range');
     show('#poll-choices-field', mode === 'choices');
+    // Reflect selection on the segmented control.
+    $$('.seg-opt[data-mode]').forEach(btn => {
+      btn.setAttribute('aria-selected', btn.dataset.mode === mode ? 'true' : 'false');
+    });
   }
 
   async _loadRuns() {
@@ -618,10 +694,9 @@ class App {
   }
 
   async _loadStats() {
-    const panel = $('#stats-panel');
     const grid = $('#stats-grid');
     const chart = $('#stats-chart');
-    if (!panel || !grid || !chart) return;
+    if (!grid || !chart) return;
     try {
       // Pull more runs than the recent-runs panel — 100 covers about a
       // week's worth at 30-min cadence + manual triggers.
@@ -662,14 +737,17 @@ class App {
         <div class="stat">
           <div class="stat__num">${month.length}</div>
           <div class="stat__label">최근 30일</div>
+          <div class="stat__sub">&nbsp;</div>
         </div>
-        <div class="stat">
+        <div class="stat stat--primary">
           <div class="stat__num">${notified}</div>
           <div class="stat__label">누적 알림 좌석</div>
+          <div class="stat__sub">&nbsp;</div>
         </div>
-        <div class="stat">
+        <div class="stat stat--ok">
           <div class="stat__num">${activeWatches}</div>
           <div class="stat__label">활성 워치</div>
+          <div class="stat__sub">&nbsp;</div>
         </div>
       `;
 
@@ -684,15 +762,12 @@ class App {
             <div class="stats-bar__label">${dayLabels[dayOfWeek]}</div>
           </div>`;
       }).join('');
-
-      panel.hidden = false;
     } catch (e) {
       if (this._isAuthError(e)) {
         this._handleAuthFailure();
         return;
       }
-      // Silent fail — stats panel stays hidden
-      panel.hidden = true;
+      // Silent fail — stats tab shows whatever rendered
       console.warn('stats load failed', e);
     }
   }
@@ -700,6 +775,7 @@ class App {
   _startCountdown() {
     const intervalEl = $('#poll-interval');
     const countdownEl = $('#poll-countdown');
+    const suffixEl = $('#poll-count-suffix');
     if (!intervalEl || !countdownEl) return;
     const tick = () => {
       const s = this.config.settings || {};
@@ -724,9 +800,17 @@ class App {
         remaining = nextTickEpoch(effective) - Date.now();
       }
       intervalEl.textContent = label;
-      countdownEl.textContent = fmtCountdown(remaining);
+      // Hero shows a bare M:SS big number + a suffix line.
       if (remaining <= 0) {
-        setTimeout(() => this._loadRuns(), 60000);
+        countdownEl.textContent = '확인 중';
+        if (suffixEl) suffixEl.textContent = '';
+      } else {
+        const totalSec = Math.floor(remaining / 1000);
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
+        countdownEl.textContent = `${min}:${String(sec).padStart(2, '0')}`;
+        if (suffixEl) suffixEl.textContent = '후 다음 폴링';
+        if (totalSec === 0) setTimeout(() => this._loadRuns(), 60000);
       }
     };
     tick();
@@ -766,6 +850,15 @@ class App {
         this._startCountdown();
       });
     }
+    // Visible segmented control drives the hidden <select> so the persist
+    // logic above runs unchanged.
+    $$('.seg-opt[data-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!modeSel) return;
+        modeSel.value = btn.dataset.mode;
+        modeSel.dispatchEvent(new Event('change'));
+      });
+    });
     const fixed = $('#poll-fixed-input');
     if (fixed) {
       fixed.addEventListener('change', async () => {
@@ -1094,6 +1187,7 @@ async function registerSW() {
 // ----- bootstrap ------------------------------------------------------------
 
 async function boot() {
+  applyTheme(loadTheme());
   registerSW();
   const creds = loadCreds();
   if (!creds) {

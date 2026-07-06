@@ -63,124 +63,168 @@
 </template>
 
 <template id="tpl-shell">
-  <header class="header">
-    <div class="header__title">
-      <h1 class="header__name">발권창구</h1>
-      <span class="header__sub" id="header-sub">cancel-seat watcher</span>
-    </div>
-    <div class="header__actions">
+  <div class="app-shell">
+  <div class="scroll" id="scroll-body">
+    <header class="header">
+      <div class="header__title">
+        <h1 class="header__name" id="tab-title">발권창구</h1>
+        <span class="header__sub" id="header-sub">cancel-seat watcher</span>
+      </div>
       <button class="header__refresh" id="refresh-btn" type="button" aria-label="새로고침">↻</button>
-      <button class="header__status" id="check-now" type="button" data-state="idle"
-              aria-label="지금 확인" aria-live="polite">
-        <span class="pulse" id="poll-pulse" data-state="idle" aria-hidden="true"></span>
-        <span class="header__last-run" id="last-run">—</span>
-      </button>
-    </div>
-  </header>
+    </header>
 
-  <hr class="rule rule--dotted" aria-hidden="true">
-
-  <div class="poll-bar" id="poll-bar" aria-live="polite">
-    <span class="poll-bar__interval" id="poll-interval">—</span>
-    <span class="poll-bar__sep" aria-hidden="true">·</span>
-    <span class="poll-bar__countdown" id="poll-countdown">—</span>
-  </div>
-
-  <main class="page">
-    <section class="watches" id="watches" aria-label="감시 중인 워치"></section>
-
-    <section class="panel" id="settings-panel">
-      <h2 class="panel__title">설정</h2>
-
-      <div class="setting-row setting-row--col">
-        <div class="setting-row__main">
-          <span class="setting-row__title">폴링 간격</span>
-          <span class="setting-row__hint">최소 10분. 범위/목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 실제 정밀도는 CF 트리거 주기(5분) 단위. 수동(지금 확인)은 항상 즉시 동작.</span>
+    <!-- ===== WATCH TAB ===== -->
+    <section class="tab-section" id="tab-watch" data-tab="watch">
+      <!-- polling hero card -->
+      <div class="hero" id="poll-hero">
+        <div class="hero__top">
+          <span class="hero__status">
+            <span class="pulse" id="poll-pulse" data-state="idle" aria-hidden="true"></span>
+            <span class="hero__status-label">감시 중</span>
+          </span>
+          <span class="hero__interval mono" id="poll-interval">—</span>
         </div>
-        <div class="setting-row__inline">
-          <label class="quiet-time">
-            <span class="field__label">모드</span>
-            <select class="select-mini" id="poll-mode-select" aria-label="폴링 모드">
-              <option value="fixed">고정</option>
-              <option value="range">범위 랜덤</option>
-              <option value="choices">목록 랜덤</option>
-            </select>
-          </label>
-          <label class="quiet-time" id="poll-fixed-field">
-            <span class="field__label">간격(분)</span>
-            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-fixed-input" placeholder="30" aria-label="고정 간격(분)" />
-          </label>
-          <label class="quiet-time" id="poll-range-min-field" hidden>
-            <span class="field__label">최소(분)</span>
-            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-min" placeholder="27" aria-label="범위 최소(분)" />
-          </label>
-          <label class="quiet-time" id="poll-range-max-field" hidden>
-            <span class="field__label">최대(분)</span>
-            <input class="field__input field__input--mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-max" placeholder="29" aria-label="범위 최대(분)" />
-          </label>
-          <label class="quiet-time" id="poll-choices-field" hidden>
-            <span class="field__label">간격 목록(분, 쉼표)</span>
-            <input class="field__input field__input--mono" type="text" inputmode="numeric" id="poll-choices-input" placeholder="27, 42, 36" aria-label="간격 목록(분, 쉼표로 구분)" />
-          </label>
+        <div class="hero__count">
+          <span class="hero__count-num mono" id="poll-countdown">—</span>
+          <span class="hero__count-suffix" id="poll-count-suffix">후 다음 폴링</span>
+        </div>
+        <div class="hero__actions">
+          <button class="hero__check" id="check-now" type="button" data-state="idle"
+                  aria-label="지금 확인" aria-live="polite">지금 확인</button>
+          <span class="hero__last mono" id="last-run">—</span>
         </div>
       </div>
 
-      <div class="setting-row">
-        <div class="setting-row__main">
-          <span class="setting-row__title">빈 결과도 알림</span>
-          <span class="setting-row__hint">cron이 잔여석 0건을 발견해도 텔레그램으로 요약 메시지 전송. 수동(지금 확인)은 토글과 무관하게 항상 알림.</span>
-        </div>
-        <label class="toggle">
-          <input class="toggle__input" type="checkbox" id="notify-empty-toggle" aria-label="빈 결과 알림">
-          <span class="toggle__track"><span class="toggle__thumb"></span></span>
-        </label>
+      <div class="section-head">
+        <span class="section-head__label">감시 중인 워치</span>
+        <span class="section-head__count mono" id="watch-count">0개</span>
       </div>
 
-      <div class="setting-row">
-        <div class="setting-row__main">
-          <span class="setting-row__title">대기예약 자동 등록</span>
-          <span class="setting-row__hint">매진 좌석에 대해 코레일 try_waiting / SRT reserve_standby로 대기 등록. 다른 사람이 결제 안 하면 자동 배정. 임시예약과 동시 진행 가능.</span>
-        </div>
-        <label class="toggle">
-          <input class="toggle__input" type="checkbox" id="allow-waiting-toggle" aria-label="대기예약 자동 등록">
-          <span class="toggle__track"><span class="toggle__thumb"></span></span>
-        </label>
-      </div>
-
-      <div class="setting-row setting-row--col">
-        <div class="setting-row__main">
-          <span class="setting-row__title">조용한 시간 (KST)</span>
-          <span class="setting-row__hint">이 시간대에는 cron 알림을 무음으로 전송. 수동(지금 확인) / 임시예약 성공·실패 / 결제 마감 reminder는 항상 소리 알림. 비워두면 항상 소리.</span>
-        </div>
-        <div class="setting-row__inline">
-          <label class="quiet-time">
-            <span class="field__label">시작</span>
-            <input class="field__input field__input--mono" type="time" id="quiet-start" />
-          </label>
-          <label class="quiet-time">
-            <span class="field__label">종료</span>
-            <input class="field__input field__input--mono" type="time" id="quiet-end" />
-          </label>
-        </div>
-      </div>
+      <section class="watches" id="watches" aria-label="감시 중인 워치"></section>
     </section>
 
-    <section class="panel" id="stats-panel" hidden>
-      <h2 class="panel__title">통계</h2>
+    <!-- ===== STATS TAB ===== -->
+    <section class="tab-section" id="tab-stats" data-tab="stats" hidden>
       <div class="stats-grid" id="stats-grid"></div>
-      <div class="stats-chart" id="stats-chart" aria-label="지난 7일 일별 실행 횟수"></div>
+      <div class="card card--chart">
+        <div class="card__label">지난 7일 실행</div>
+        <div class="stats-chart" id="stats-chart" aria-label="지난 7일 일별 실행 횟수"></div>
+      </div>
+      <div class="card card--runs">
+        <div class="card__label">최근 실행</div>
+        <ul class="run-list" id="run-list" aria-label="최근 워크플로우 실행"></ul>
+      </div>
     </section>
 
-    <section class="panel" id="runs-panel">
-      <h2 class="panel__title">최근 실행</h2>
-      <ul class="run-list" id="run-list" aria-label="최근 워크플로우 실행"></ul>
+    <!-- ===== SETTINGS TAB ===== -->
+    <section class="tab-section" id="tab-settings" data-tab="settings" hidden>
+      <div class="card">
+        <div class="card__title">폴링 간격</div>
+        <div class="card__desc">최소 10분. 범위·목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 실제 정밀도는 CF 트리거 주기(5분) 단위. 수동(지금 확인)은 항상 즉시 동작.</div>
+        <div class="seg-track" role="tablist" aria-label="폴링 모드">
+          <button class="seg-opt" type="button" data-mode="fixed">고정</button>
+          <button class="seg-opt" type="button" data-mode="range">범위 랜덤</button>
+          <button class="seg-opt" type="button" data-mode="choices">목록 랜덤</button>
+        </div>
+        <select class="sr-only" id="poll-mode-select" aria-hidden="true" tabindex="-1">
+          <option value="fixed">고정</option>
+          <option value="range">범위 랜덤</option>
+          <option value="choices">목록 랜덤</option>
+        </select>
+        <div class="pm-input" id="poll-fixed-field">
+          <span class="pm-input__label">간격(분)</span>
+          <input class="pm-input__box mono" type="number" inputmode="numeric" min="10" step="1" id="poll-fixed-input" placeholder="30" aria-label="고정 간격(분)" />
+        </div>
+        <div class="pm-input pm-input--two" id="poll-range-field" hidden>
+          <div class="pm-input__col" id="poll-range-min-field">
+            <span class="pm-input__label">최소(분)</span>
+            <input class="pm-input__box mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-min" placeholder="27" aria-label="범위 최소(분)" />
+          </div>
+          <div class="pm-input__col" id="poll-range-max-field">
+            <span class="pm-input__label">최대(분)</span>
+            <input class="pm-input__box mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-max" placeholder="29" aria-label="범위 최대(분)" />
+          </div>
+        </div>
+        <div class="pm-input" id="poll-choices-field" hidden>
+          <span class="pm-input__label">목록(분, 쉼표)</span>
+          <input class="pm-input__box mono" type="text" inputmode="numeric" id="poll-choices-input" placeholder="27, 42, 36" aria-label="간격 목록(분, 쉼표로 구분)" />
+        </div>
+      </div>
+
+      <div class="card card--rows">
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">빈 결과도 알림</div>
+            <div class="toggle-row__desc">잔여석 0건이어도 텔레그램으로 요약 메시지 전송. 수동은 토글과 무관하게 항상 알림.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="notify-empty-toggle" aria-label="빈 결과 알림">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">대기예약 자동 등록</div>
+            <div class="toggle-row__desc">매진 좌석에 코레일 try_waiting / SRT reserve_standby로 대기 등록. 임시예약과 동시 진행.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="allow-waiting-toggle" aria-label="대기예약 자동 등록">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">조용한 시간 <span class="card__tag mono">KST</span></div>
+        <div class="card__desc">이 시간대 cron 알림은 무음으로 전송. 수동·임시예약·reminder는 항상 소리. 비워두면 항상 소리.</div>
+        <div class="pm-input pm-input--two">
+          <div class="pm-input__col">
+            <span class="pm-input__label">시작</span>
+            <input class="pm-input__box mono" type="time" id="quiet-start" />
+          </div>
+          <div class="pm-input__col">
+            <span class="pm-input__label">종료</span>
+            <input class="pm-input__box mono" type="time" id="quiet-end" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--rows">
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">다크 모드</div>
+            <div class="toggle-row__desc">라이트/다크 테마 전환. 이 기기에만 저장됩니다.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="theme-toggle" aria-label="다크 모드">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+      </div>
     </section>
-  </main>
+  </div>
 
   <button class="fab" id="fab-add" type="button" aria-label="워치 추가">
     <span class="fab__plus" aria-hidden="true">＋</span>
     <span class="fab__label">워치 추가</span>
   </button>
+
+  <!-- bottom tab bar -->
+  <nav class="tabbar" aria-label="주 메뉴">
+    <button class="tabbar__item" type="button" data-tab="watch" aria-current="page">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="6" width="16" height="2.4" rx="1.2" fill="currentColor"/><rect x="4" y="11" width="16" height="2.4" rx="1.2" fill="currentColor"/><rect x="4" y="16" width="10" height="2.4" rx="1.2" fill="currentColor"/></svg>
+      <span class="tabbar__label">워치</span>
+    </button>
+    <button class="tabbar__item" type="button" data-tab="stats">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="13" width="4" height="7" rx="1.4"/><rect x="10" y="8" width="4" height="12" rx="1.4"/><rect x="16" y="4" width="4" height="16" rx="1.4"/></svg>
+      <span class="tabbar__label">통계</span>
+    </button>
+    <button class="tabbar__item" type="button" data-tab="settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="6.5" width="16" height="2.4" rx="1.2"/><circle cx="9" cy="7.7" r="3"/><rect x="4" y="15.1" width="16" height="2.4" rx="1.2"/><circle cx="15" cy="16.3" r="3"/></svg>
+      <span class="tabbar__label">설정</span>
+    </button>
+  </nav>
+  </div>
 
   <dialog class="sheet" id="log-sheet">
     <div class="sheet__form sheet__form--logs">
@@ -204,8 +248,10 @@
 
       <fieldset class="seg" aria-label="제공자">
         <legend class="field__label">제공자</legend>
-        <label class="seg__opt"><input type="radio" name="provider" value="korail" checked><span data-prov="korail">KORAIL · KTX</span></label>
-        <label class="seg__opt"><input type="radio" name="provider" value="srt"><span data-prov="srt">SRT</span></label>
+        <div class="seg__track">
+          <label class="seg__opt"><input type="radio" name="provider" value="korail" checked><span data-prov="korail">KORAIL · KTX</span></label>
+          <label class="seg__opt"><input type="radio" name="provider" value="srt"><span data-prov="srt">SRT</span></label>
+        </div>
       </fieldset>
 
       <div class="row row--2">
@@ -256,9 +302,11 @@
 
       <fieldset class="seg" aria-label="좌석 등급">
         <legend class="field__label">좌석 등급</legend>
-        <label class="seg__opt"><input type="radio" name="seat_class" value="general" checked><span>일반</span></label>
-        <label class="seg__opt"><input type="radio" name="seat_class" value="special"><span>특실</span></label>
-        <label class="seg__opt"><input type="radio" name="seat_class" value="any"><span>둘 다</span></label>
+        <div class="seg__track">
+          <label class="seg__opt"><input type="radio" name="seat_class" value="general" checked><span>일반</span></label>
+          <label class="seg__opt"><input type="radio" name="seat_class" value="special"><span>특실</span></label>
+          <label class="seg__opt"><input type="radio" name="seat_class" value="any"><span>둘 다</span></label>
+        </div>
       </fieldset>
 
       <div class="setting-row setting-row--inline">
@@ -285,37 +333,32 @@
 
 <template id="tpl-watch">
   <article class="watch" data-watch-id="" data-provider="" data-active="">
-    <span class="watch__stripe" aria-hidden="true"></span>
     <div class="watch__head">
-      <span class="badge badge--provider"></span>
-      <span class="badge badge--auto-reserve" hidden>🔔 자동예약</span>
-      <h3 class="watch__route">
-        <span class="watch__from"></span>
-        <span class="watch__arrow" aria-hidden="true">→</span>
-        <span class="watch__to"></span>
-      </h3>
+      <span class="watch__stamp" aria-hidden="true"></span>
+      <div class="watch__headmain">
+        <div class="watch__tags">
+          <span class="badge badge--provider"></span>
+          <span class="badge badge--auto-reserve" hidden>자동예약</span>
+        </div>
+        <h3 class="watch__route">
+          <span class="watch__from"></span>
+          <span class="watch__arrow" aria-hidden="true">→</span>
+          <span class="watch__to"></span>
+        </h3>
+      </div>
     </div>
-    <p class="watch__date"></p>
-    <dl class="watch__meta">
-      <div class="watch__meta-row">
-        <dt class="watch__meta-label">시간대</dt>
-        <dd class="watch__meta-value mono"></dd>
-      </div>
-      <div class="watch__meta-row">
-        <dt class="watch__meta-label">열차</dt>
-        <dd class="watch__meta-types"></dd>
-      </div>
-      <div class="watch__meta-row">
-        <dt class="watch__meta-label">인원</dt>
-        <dd class="watch__meta-value mono"></dd>
-      </div>
-    </dl>
-    <hr class="rule rule--dotted" aria-hidden="true">
+    <p class="watch__date mono"></p>
+    <div class="watch__meta">
+      <span class="watch__chip watch__chip--time mono"></span>
+      <span class="watch__meta-types"></span>
+      <span class="watch__chip watch__chip--pax"></span>
+    </div>
+    <hr class="watch__divider" aria-hidden="true">
     <footer class="watch__foot">
-      <span class="watch__last-check"></span>
+      <span class="watch__last-check mono"></span>
       <div class="watch__controls">
-        <button class="btn-mini watch__edit" type="button">수정</button>
-        <button class="btn-mini btn-mini--danger watch__delete" type="button">삭제</button>
+        <button class="watch__edit" type="button">수정</button>
+        <button class="watch__delete" type="button" aria-label="삭제">삭제</button>
         <label class="toggle">
           <input class="toggle__input" type="checkbox" aria-label="활성화">
           <span class="toggle__track"><span class="toggle__thumb"></span></span>
