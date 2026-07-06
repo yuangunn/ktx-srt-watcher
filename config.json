@@ -63,6 +63,9 @@
     "poll_interval_min": 30,
     "allow_waiting_list": true,
     "poll_interval_mode": "range",
-    "poll_interval_range": []
+    "poll_interval_range": [
+      20,
+      24
+    ]
   }
 }
