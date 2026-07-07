@@ -392,6 +392,45 @@ class TestManualTriggerSummary:
         assert summary_calls == []
 
 
+class TestPushObeysThrottle:
+    """config.json push (PWA settings save) must obey the poll throttle so
+    repeated saves don't force off-cadence polling."""
+
+    def _cfg(self):
+        return {
+            "version": 1,
+            "settings": {"poll_interval_mode": "range", "poll_interval_range": [24, 36]},
+            "watches": [_watch_dict(id="w")],
+        }
+
+    def _run(self, state, now, event):
+        korail = FakeProvider("korail", search_results=[])
+        main.run_watches(
+            self._cfg(), state,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso=now,
+            event_name=event,
+        )
+        return len(korail.searches)
+
+    def test_push_before_next_poll_is_throttled(self):
+        state = {"last_run": "2026-07-06T15:00:00Z", "next_poll_at": "2026-07-06T15:30:00Z", "watches": {}}
+        assert self._run(state, "2026-07-06T15:03:00Z", "push") == 0
+
+    def test_push_after_next_poll_runs(self):
+        state = {"last_run": "2026-07-06T15:00:00Z", "next_poll_at": "2026-07-06T15:30:00Z", "watches": {}}
+        assert self._run(state, "2026-07-06T15:31:00Z", "push") == 1
+
+    def test_first_push_without_cycle_runs(self):
+        assert self._run({"last_run": None, "watches": {}}, "2026-07-06T15:00:00Z", "push") == 1
+
+    def test_manual_dispatch_still_bypasses_throttle(self):
+        state = {"last_run": "2026-07-06T15:00:00Z", "next_poll_at": "2026-07-06T15:30:00Z", "watches": {}}
+        assert self._run(state, "2026-07-06T15:03:00Z", "workflow_dispatch") == 1
+
+
 class TestMultiTrainFallback:
     def test_first_candidate_success_skips_others(self):
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}

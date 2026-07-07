@@ -180,7 +180,12 @@ def run_watches(
     quiet_start = settings_pre.get("quiet_hours_start") or None
     quiet_end = settings_pre.get("quiet_hours_end") or None
     is_manual_pre = event_name == "workflow_dispatch"
-    is_automated_pre = event_name in ("schedule", "repository_dispatch")
+    # "push" (config.json 변경 커밋) is treated as automated so it obeys the
+    # poll throttle: saving settings in the PWA shouldn't force an off-cadence
+    # poll (which, done repeatedly, looked like 1-min polling). The config
+    # change is picked up on the next scheduled poll instead. Only manual
+    # "지금 확인" (workflow_dispatch) bypasses the throttle.
+    is_automated_pre = event_name in ("schedule", "repository_dispatch", "push")
     # Quiet hours suppress the notification *sound*, not the message.
     # Manual triggers (지금 확인) bypass quiet hours — user explicitly
     # asked. Reservation success/failure/reminders also bypass downstream.
@@ -241,7 +246,7 @@ def run_watches(
     settings = config.get("settings") or {}
     notify_empty_on_cron = bool(settings.get("notify_empty_on_cron", False))
     is_manual = event_name == "workflow_dispatch"
-    is_automated = event_name in ("schedule", "repository_dispatch")
+    is_automated = event_name in ("schedule", "repository_dispatch", "push")
     should_summarize = is_manual or (notify_empty_on_cron and is_automated)
     if should_summarize and new_train_total == 0 and notify_summary_fn is not None:
         try:
