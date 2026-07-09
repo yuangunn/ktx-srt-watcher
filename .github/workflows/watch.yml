@@ -21,8 +21,12 @@ permissions:
   contents: write             # state.json 커밋용
 
 concurrency:
+  # cancel-in-progress: a newer tick supersedes an older queued one. With CF
+  # firing every 5 min, queuing (false) let runs pile up and hit the 15-min
+  # queue limit → cancelled (looked like "failed"). State is reconciled by the
+  # next run's semantic merge, so cancelling a superseded run is safe.
   group: ticket-watch
-  cancel-in-progress: false   # 중첩 실행 방지, 진행 중인 건 끝까지
+  cancel-in-progress: true
 
 jobs:
   watch:
@@ -31,15 +35,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cheap pre-install gate (stdlib only, no pip). Most ticks are throttled
+      # skips; deciding here lets us bypass the ~15s install + poll, so the
+      # concurrency queue never backs up.
+      - name: Poll gate
+        id: gate
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        # python3 is preinstalled on ubuntu-latest; the gate needs no pip deps.
+        run: python3 -m worker.gate >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.poll == 'true'
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install deps
+        if: steps.gate.outputs.poll == 'true'
         run: pip install -r requirements.txt
 
       - name: Run watcher
+        if: steps.gate.outputs.poll == 'true'
         env:
           TZ: Asia/Seoul
           KORAIL_ID: ${{ secrets.KORAIL_ID }}
@@ -54,6 +71,7 @@ jobs:
         run: python -m worker.main
 
       - name: Commit state
+        if: steps.gate.outputs.poll == 'true'
         run: |
           set +e
           git config user.name "ticket-watcher-bot"
@@ -64,7 +82,7 @@ jobs:
           # changes back in via worker.state's semantic merge.
           cp state.json /tmp/state.ours.json
 
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6 7 8; do
             git fetch origin main || { sleep $((attempt)); continue; }
             git reset --hard origin/main
             python -m worker.state merge /tmp/state.ours.json state.json
@@ -85,5 +103,9 @@ jobs:
             sleep $((attempt))
           done
 
-          echo "state.json push failed after 5 attempts" >&2
-          exit 1
+          # Losing the push race is harmless: the next run reconciles our state
+          # via worker.state's semantic merge. Mirror to CF KV so the PWA still
+          # sees fresh data, and exit 0 so a lost race never marks the job failed.
+          echo "state.json push lost the race after 8 attempts; next run will merge" >&2
+          python -m worker.state push-mirror /tmp/state.ours.json || true
+          exit 0
