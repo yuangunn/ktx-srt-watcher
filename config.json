@@ -27,7 +27,7 @@
       },
       "seat_class": "any",
       "auto_reserve": true,
-      "active": true
+      "active": false
     },
     {
       "id": "수원-서울-20260715-o5d7",
