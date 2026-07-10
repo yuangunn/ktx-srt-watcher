@@ -83,7 +83,7 @@
       },
       "seat_class": "any",
       "auto_reserve": false,
-      "active": true
+      "active": false
     }
   ],
   "settings": {
