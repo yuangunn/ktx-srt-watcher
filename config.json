@@ -2,13 +2,13 @@
   "version": 1,
   "watches": [
     {
-      "id": "수원-서울-20260716-vt20",
+      "id": "수원-서울-20260715-o5d7",
       "provider": "korail",
       "from": "수원",
       "to": "서울",
-      "date": "2026-07-16",
-      "time_min": "11:00",
-      "time_max": "12:00",
+      "date": "2026-07-15",
+      "time_min": "07:00",
+      "time_max": "08:00",
       "train_types": [
         "KTX",
         "KTX-산천",
