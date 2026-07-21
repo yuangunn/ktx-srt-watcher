@@ -42,7 +42,7 @@
       },
       "seat_class": "any",
       "auto_reserve": true,
-      "active": false
+      "active": true
     }
   ],
   "settings": {
