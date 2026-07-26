@@ -556,6 +556,62 @@ hr { border: 0; margin: 0; }
 .toggle-row__title { font-size: 14px; font-weight: 700; color: var(--ink); }
 .toggle-row__desc { font-size: 12px; line-height: 1.45; color: var(--ink3); margin-top: 3px; }
 
+/* ---------- system health ---------- */
+
+.card__title { display: flex; align-items: center; gap: 8px; }
+.health__refresh {
+  margin-left: auto;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink3);
+  font-size: 14px; line-height: 1;
+  transition: transform .1s ease, color .15s ease;
+}
+.health__refresh:active { transform: scale(.92); }
+.health__refresh[data-state="loading"] { animation: refresh-spin .8s linear infinite; pointer-events: none; color: var(--primary); }
+
+.health { list-style: none; margin: 0; padding: 0; }
+.health__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.health__row:first-child { border-top: 0; }
+.health__dot {
+  width: 9px; height: 9px; border-radius: 999px;
+  background: var(--ink4);
+  flex-shrink: 0;
+}
+.health__dot[data-level="ok"]   { background: var(--ok); }
+.health__dot[data-level="warn"] { background: var(--ember); }
+.health__dot[data-level="bad"]  { background: var(--danger); }
+.health__name { font-size: 13px; font-weight: 700; color: var(--ink); flex-shrink: 0; }
+.health__detail {
+  font-family: var(--f-mono);
+  font-size: 11px; color: var(--ink3);
+  margin-left: auto; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.health__fails { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.health__fails-label {
+  font-size: 11px; font-weight: 800; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--ink4);
+  margin-bottom: 8px;
+}
+.health__fails-list { list-style: none; margin: 0; padding: 0; }
+.health__fail {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0;
+  font-family: var(--f-mono); font-size: 11px;
+  color: var(--ink3);
+  cursor: pointer;
+}
+.health__fail-time { color: var(--ink); font-weight: 600; }
+.health__fail-why { margin-left: auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- toggle ---------- */
 
 .toggle { display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
