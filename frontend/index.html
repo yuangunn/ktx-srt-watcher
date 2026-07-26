@@ -211,6 +211,18 @@
           </label>
         </div>
       </div>
+
+      <div class="card" id="health-card">
+        <div class="card__title">시스템 상태
+          <button class="health__refresh" id="health-refresh" type="button" aria-label="상태 새로고침">↻</button>
+        </div>
+        <div class="card__desc">폴링·워크플로·CF Worker·토큰이 정상인지 한눈에 확인합니다.</div>
+        <ul class="health" id="health-list" aria-live="polite"></ul>
+        <div class="health__fails" id="health-fails" hidden>
+          <div class="health__fails-label">최근 실패</div>
+          <ul class="health__fails-list" id="health-fails-list"></ul>
+        </div>
+      </div>
     </section>
   </div>
 

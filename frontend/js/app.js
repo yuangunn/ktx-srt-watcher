@@ -126,6 +126,21 @@ class GitHub {
     if (!res.ok) throw new Error(`auth check → ${res.status}`);
     return res.json();
   }
+  // PAT health: fine-grained tokens return an expiry header on every response.
+  // Classic / no-expiry tokens omit it, in which case expiresAt is null.
+  async tokenInfo() {
+    const res = await fetch(`https://api.github.com/repos/${this.repo}`, {
+      headers: this._headers(), cache: 'no-store',
+    });
+    const expiry = res.headers.get('github-authentication-token-expiration');
+    let expiresAt = null;
+    if (expiry) {
+      // e.g. "2026-09-01 00:00:00 UTC" or an ISO string
+      const t = Date.parse(expiry.replace(' UTC', 'Z').replace(' ', 'T'));
+      if (!Number.isNaN(t)) expiresAt = t;
+    }
+    return { ok: res.ok, status: res.status, expiresAt };
+  }
   async dispatchWorkflow(workflowFile, ref = 'main') {
     const res = await fetch(
       `https://api.github.com/repos/${this.repo}/actions/workflows/${workflowFile}/dispatches`,
@@ -505,6 +520,7 @@ class App {
     this._wireSettings();
     this._wireLogSheet();
     this._wireRefresh();
+    this._wireHealthRefresh();
     this._setTab('watch');
     await this._loadAll();
     this._startCountdown();
@@ -548,6 +564,19 @@ class App {
       const theme = toggle.checked ? 'dark' : 'light';
       applyTheme(theme);
       saveTheme(theme);
+    });
+  }
+  _wireHealthRefresh() {
+    const btn = $('#health-refresh');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.state === 'loading') return;
+      btn.dataset.state = 'loading';
+      try {
+        await this._loadHealth();
+      } finally {
+        setTimeout(() => { btn.dataset.state = ''; }, 400);
+      }
     });
   }
   _wireRefresh() {
@@ -600,6 +629,7 @@ class App {
     this._renderSettings();
     this._loadRuns();
     this._loadStats();
+    this._loadHealth();
   }
 
   async _fetchStateMirror() {
@@ -738,6 +768,102 @@ class App {
       return;
     }
     recent.forEach(e => list.appendChild(renderPollRow(e)));
+  }
+
+  // ---- system health ----
+  // Four independent checks (polling / Actions / CF Worker / PAT). Each renders
+  // its own row and degrades on its own — one failing probe never blanks the
+  // card. Recent non-success runs are listed underneath so a "GHA 실패" alert
+  // can be diagnosed from the app instead of the Actions tab.
+  async _loadHealth() {
+    const list = $('#health-list');
+    if (!list) return;
+    const rows = [];
+
+    // 1) polling freshness from state.last_run
+    const lastRun = this.state?.last_run ? Date.parse(this.state.last_run) : NaN;
+    if (Number.isFinite(lastRun)) {
+      const ageMin = Math.floor((Date.now() - lastRun) / 60000);
+      const level = ageMin > 120 ? 'bad' : (ageMin > 45 ? 'warn' : 'ok');
+      rows.push({ name: '폴링', level, detail: `${fmtRelative(this.state.last_run)} · ${level === 'ok' ? '정상' : '지연'}` });
+    } else {
+      rows.push({ name: '폴링', level: 'warn', detail: '실행 기록 없음' });
+    }
+
+    // 2) GitHub Actions — recent run conclusions
+    let failures = [];
+    try {
+      const runs = await this.gh.listRuns('watch.yml', 20);
+      failures = runs.filter(r => r.conclusion && r.conclusion !== 'success' && r.conclusion !== 'skipped');
+      const bad = failures.filter(r => r.conclusion === 'failure').length;
+      const level = bad ? 'bad' : (failures.length ? 'warn' : 'ok');
+      const detail = bad ? `최근 ${runs.length}회 중 실패 ${bad}`
+        : failures.length ? `최근 ${runs.length}회 중 취소 ${failures.length}`
+        : `최근 ${runs.length}회 모두 정상`;
+      rows.push({ name: 'GitHub Actions', level, detail });
+    } catch (e) {
+      rows.push({ name: 'GitHub Actions', level: 'warn', detail: '조회 실패' });
+    }
+
+    // 3) CF Worker /health
+    if (this._cfWorkerUrl) {
+      try {
+        const res = await fetch(`${this._cfWorkerUrl.replace(/\/$/, '')}/health`, { cache: 'no-store' });
+        rows.push(res.ok
+          ? { name: 'CF Worker', level: 'ok', detail: '응답 정상' }
+          : { name: 'CF Worker', level: 'bad', detail: `HTTP ${res.status}` });
+      } catch {
+        rows.push({ name: 'CF Worker', level: 'bad', detail: '응답 없음' });
+      }
+    } else {
+      rows.push({ name: 'CF Worker', level: 'warn', detail: '미설정' });
+    }
+
+    // 4) PAT expiry
+    try {
+      const info = await this.gh.tokenInfo();
+      if (!info.ok) {
+        rows.push({ name: 'PAT', level: 'bad', detail: `인증 실패 (${info.status})` });
+      } else if (info.expiresAt) {
+        const days = Math.floor((info.expiresAt - Date.now()) / 86_400_000);
+        const level = days <= 3 ? 'bad' : (days <= 14 ? 'warn' : 'ok');
+        rows.push({ name: 'PAT', level, detail: days >= 0 ? `${days}일 남음` : '만료됨' });
+      } else {
+        rows.push({ name: 'PAT', level: 'ok', detail: '만료 없음' });
+      }
+    } catch {
+      rows.push({ name: 'PAT', level: 'warn', detail: '확인 불가' });
+    }
+
+    list.innerHTML = '';
+    rows.forEach(r => {
+      const li = document.createElement('li');
+      li.className = 'health__row';
+      li.innerHTML = `<span class="health__dot" data-level="${r.level}"></span>` +
+        `<span class="health__name"></span><span class="health__detail"></span>`;
+      li.querySelector('.health__name').textContent = r.name;
+      li.querySelector('.health__detail').textContent = r.detail;
+      list.appendChild(li);
+    });
+
+    // recent failures (clickable → GHA log dialog)
+    const wrap = $('#health-fails');
+    const failList = $('#health-fails-list');
+    if (!wrap || !failList) return;
+    failList.innerHTML = '';
+    const recent = failures.slice(0, 5);
+    wrap.hidden = recent.length === 0;
+    recent.forEach(run => {
+      const li = document.createElement('li');
+      li.className = 'health__fail';
+      li.innerHTML = `<span class="health__dot" data-level="${run.conclusion === 'failure' ? 'bad' : 'warn'}"></span>` +
+        `<span class="health__fail-time"></span><span class="health__fail-why"></span>`;
+      li.querySelector('.health__fail-time').textContent = fmtRunTime(run.started);
+      li.querySelector('.health__fail-why').textContent =
+        `${EVENT_LABELS[run.event] || run.event || ''} · ${run.conclusion}`;
+      li.addEventListener('click', () => this._showRunLogs(run));
+      failList.appendChild(li);
+    });
   }
 
   _loadStats() {
