@@ -1,31 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Maskable: full-bleed dark; train + dot within central 80% safe zone (52..460) -->
-  <rect width="512" height="512" fill="#0E1014"/>
-
-  <!-- Alert ring/dot -->
-  <g transform="translate(360, 156)">
-    <circle r="28" fill="none" stroke="#E26B7A" stroke-width="4" opacity="0.35"/>
-    <circle r="14" fill="#E26B7A"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024" role="img" aria-label="발권창구">
+  <!-- Maskable: full-bleed cobalt (OS applies its own mask); foreground pulled
+       into the central ~82% safe zone so nothing important gets clipped. -->
+  <defs>
+    <linearGradient id="bgCobalt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E72F2"/>
+      <stop offset="1" stop-color="#69A6FF"/>
+    </linearGradient>
+    <radialGradient id="glossHi" cx="0.26" cy="0.2" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bgCobalt)"/>
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#glossHi)"/>
+  <!-- foreground scaled 0.82 about center (512,512) → translate 92,92 -->
+  <g transform="translate(92 92) scale(0.82)">
+    <!-- speed lines -->
+    <g stroke="#ffffff" stroke-linecap="round" stroke-width="26" opacity="0.55">
+      <line x1="188" y1="452" x2="266" y2="452"/>
+      <line x1="140" y1="506" x2="266" y2="506"/>
+      <line x1="172" y1="560" x2="266" y2="560"/>
+    </g>
+    <!-- rails -->
+    <g stroke="#ffffff" stroke-linecap="round">
+      <line x1="238" y1="660" x2="812" y2="660" stroke-width="16" opacity="0.38"/>
+      <line x1="316" y1="700" x2="756" y2="700" stroke-width="14" opacity="0.2"/>
+    </g>
+    <!-- train body (side-profile bullet nose, points right) -->
+    <path d="M300 400 L650 400 C742 400 802 452 814 512 C802 574 742 602 650 602 L300 602 Q250 602 250 552 L250 450 Q250 400 300 400 Z" fill="#ffffff"/>
+    <!-- window band -->
+    <rect x="330" y="446" width="330" height="52" rx="24" fill="#12327A"/>
+    <!-- cockpit window near nose -->
+    <path d="M690 452 C724 454 756 474 770 502 C744 502 704 500 690 500 Z" fill="#12327A"/>
+    <!-- nose light -->
+    <circle cx="756" cy="556" r="20" fill="#FF6B00"/>
+    <!-- ember live dot (watcher) -->
+    <circle cx="778" cy="262" r="42" fill="url(#bgCobalt)"/>
+    <circle cx="778" cy="262" r="30" fill="#FF6B00"/>
   </g>
-
-  <!-- Bullet train -->
-  <g transform="translate(256, 270)">
-    <path d="
-      M -150,-52 Q -150,-76 -124,-76 L 60,-76 Q 124,-76 148,-30 L 158,0
-      Q 158,28 124,28 L -124,28 Q -150,28 -150,4 Z
-    " fill="#ECE7DD"/>
-    <path d="
-      M 56,-62 Q 108,-62 130,-30 L 134,-8 L 56,-8 Z
-    " fill="#0E1014"/>
-    <rect x="-130" y="-58" width="32" height="22" rx="4" fill="#0E1014"/>
-    <rect x="-92" y="-58" width="32" height="22" rx="4" fill="#0E1014"/>
-    <rect x="-54" y="-58" width="32" height="22" rx="4" fill="#0E1014"/>
-    <rect x="-16" y="-58" width="32" height="22" rx="4" fill="#0E1014"/>
-    <rect x="22" y="-58" width="32" height="22" rx="4" fill="#0E1014"/>
-    <circle cx="138" cy="8" r="7" fill="#5BA8E5"/>
-  </g>
-
-  <!-- Track -->
-  <rect x="106" y="358" width="300" height="5" fill="#5BA8E5"/>
-  <rect x="106" y="374" width="300" height="5" fill="#E26B7A"/>
 </svg>

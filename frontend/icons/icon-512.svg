@@ -1,39 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" fill="#0E1014"/>
-
-  <!-- Alert ring/dot -->
-  <g transform="translate(372, 132)">
-    <circle r="34" fill="none" stroke="#E26B7A" stroke-width="5" opacity="0.35"/>
-    <circle r="17" fill="#E26B7A"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024" role="img" aria-label="발권창구">
+  <defs>
+    <linearGradient id="bgCobalt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E72F2"/>
+      <stop offset="1" stop-color="#69A6FF"/>
+    </linearGradient>
+    <radialGradient id="glossHi" cx="0.26" cy="0.2" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bgCobalt)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#glossHi)"/>
+  <!-- speed lines -->
+  <g stroke="#ffffff" stroke-linecap="round" stroke-width="26" opacity="0.55">
+    <line x1="188" y1="452" x2="266" y2="452"/>
+    <line x1="140" y1="506" x2="266" y2="506"/>
+    <line x1="172" y1="560" x2="266" y2="560"/>
   </g>
-
-  <!-- Bullet train side, nose right -->
-  <g transform="translate(256, 290)">
-    <path d="
-      M -184,-58 Q -184,-86 -152,-86 L 86,-86 Q 152,-86 178,-32 L 188,0
-      Q 188,32 152,32 L -152,32 Q -184,32 -184,5 Z
-    " fill="#ECE7DD"/>
-    <!-- Windshield -->
-    <path d="
-      M 80,-70 Q 132,-70 156,-32 L 162,-6 L 80,-6 Z
-    " fill="#0E1014"/>
-    <!-- Side windows -->
-    <rect x="-156" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
-    <rect x="-110" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
-    <rect x="-64" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
-    <rect x="-18" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
-    <rect x="28" y="-64" width="36" height="26" rx="5" fill="#0E1014"/>
-    <!-- Headlight -->
-    <circle cx="166" cy="10" r="8" fill="#5BA8E5"/>
+  <!-- rails -->
+  <g stroke="#ffffff" stroke-linecap="round">
+    <line x1="238" y1="660" x2="812" y2="660" stroke-width="16" opacity="0.38"/>
+    <line x1="316" y1="700" x2="756" y2="700" stroke-width="14" opacity="0.2"/>
   </g>
-
-  <!-- Track stripes -->
-  <rect x="60" y="392" width="392" height="6" fill="#5BA8E5"/>
-  <rect x="60" y="410" width="392" height="6" fill="#E26B7A"/>
-
-  <!-- Wordmark -->
-  <text x="256" y="468"
-        font-family="'JetBrains Mono', ui-monospace, monospace"
-        font-size="18" font-weight="500" fill="#9C9588"
-        text-anchor="middle" letter-spacing="6">KTX · SRT · WATCHER</text>
+  <!-- train body (side-profile bullet nose, points right) -->
+  <path d="M300 400 L650 400 C742 400 802 452 814 512 C802 574 742 602 650 602 L300 602 Q250 602 250 552 L250 450 Q250 400 300 400 Z" fill="#ffffff"/>
+  <!-- window band -->
+  <rect x="330" y="446" width="330" height="52" rx="24" fill="#12327A"/>
+  <!-- cockpit window near nose -->
+  <path d="M690 452 C724 454 756 474 770 502 C744 502 704 500 690 500 Z" fill="#12327A"/>
+  <!-- nose light -->
+  <circle cx="756" cy="556" r="20" fill="#FF6B00"/>
+  <!-- ember live dot (watcher) -->
+  <circle cx="778" cy="262" r="42" fill="url(#bgCobalt)"/>
+  <circle cx="778" cy="262" r="30" fill="#FF6B00"/>
 </svg>
