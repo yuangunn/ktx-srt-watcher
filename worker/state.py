@@ -128,6 +128,25 @@ def prune_past_dates(state: dict[str, Any], today: str) -> None:
         state["auto_reserve_disabled"] = [w for w in disabled if w in watches]
 
 
+def prune_orphan_flags(state: dict[str, Any], config_watch_ids: Iterable[str]) -> None:
+    """Drop per-watch flags whose watch is no longer in config.json.
+
+    Editing a watch in the PWA mints a fresh id, so the old id lingers in
+    state until its travel date passes — carrying a disable flag that matches
+    nothing.  Keying the cleanup on config (not on state["watches"]) clears it
+    immediately.  Pass *every* config watch id, active or not: deactivating a
+    watch must not silently re-arm its auto-reserve.
+    """
+    known = set(config_watch_ids)
+    disabled = state.get("auto_reserve_disabled")
+    if disabled:
+        state["auto_reserve_disabled"] = [w for w in disabled if w in known]
+    pending = state.get("pending_reservations")
+    if pending:
+        for wid in [w for w in pending if w not in known]:
+            del pending[wid]
+
+
 def _entry(state: dict[str, Any], watch_id: str) -> dict[str, Any]:
     watches = state.setdefault("watches", {})
     return watches.setdefault(watch_id, {"last_check": None, "notified_train_ids": []})

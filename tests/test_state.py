@@ -244,3 +244,27 @@ class TestAutoReserveDisabled:
         }
         state.prune_past_dates(s, today="2026-04-30")
         assert s["auto_reserve_disabled"] == ["keep"]
+
+
+class TestPruneOrphanFlags:
+    def test_drops_disable_flag_for_watch_absent_from_config(self):
+        s = {"watches": {"old": {"watch_date": "2026-08-17"}}, "auto_reserve_disabled": ["old", "live"]}
+        state.prune_orphan_flags(s, ["live"])
+        assert s["auto_reserve_disabled"] == ["live"]
+
+    def test_keeps_flag_for_inactive_watch_still_in_config(self):
+        # Deactivating a watch must not silently re-arm its auto-reserve.
+        s = {"watches": {}, "auto_reserve_disabled": ["paused"]}
+        state.prune_orphan_flags(s, ["paused"])
+        assert s["auto_reserve_disabled"] == ["paused"]
+
+    def test_drops_orphan_pending_reservation(self):
+        s = {"watches": {}, "pending_reservations": {"old": {"id": "R1"}, "live": {"id": "R2"}}}
+        state.prune_orphan_flags(s, ["live"])
+        assert set(s["pending_reservations"]) == {"live"}
+
+    def test_no_op_when_nothing_tracked(self):
+        s = {"watches": {}}
+        state.prune_orphan_flags(s, ["live"])
+        assert "auto_reserve_disabled" not in s
+        assert "pending_reservations" not in s
