@@ -807,13 +807,23 @@ class App {
 
     // 3) CF Worker /health
     if (this._cfWorkerUrl) {
+      const healthUrl = `${this._cfWorkerUrl.replace(/\/$/, '')}/health`;
       try {
-        const res = await fetch(`${this._cfWorkerUrl.replace(/\/$/, '')}/health`, { cache: 'no-store' });
+        const res = await fetch(healthUrl, { cache: 'no-store' });
         rows.push(res.ok
           ? { name: 'CF Worker', level: 'ok', detail: '응답 정상' }
           : { name: 'CF Worker', level: 'bad', detail: `HTTP ${res.status}` });
       } catch {
-        rows.push({ name: 'CF Worker', level: 'bad', detail: '응답 없음' });
+        // A missing Access-Control-Allow-Origin rejects the fetch exactly like
+        // an unreachable host does, so don't call it dead yet: a no-cors retry
+        // resolves iff the request really reached the Worker. We can't read the
+        // status through an opaque response, hence the softer wording.
+        try {
+          await fetch(healthUrl, { cache: 'no-store', mode: 'no-cors' });
+          rows.push({ name: 'CF Worker', level: 'warn', detail: '도달 가능 · CORS 미설정' });
+        } catch {
+          rows.push({ name: 'CF Worker', level: 'bad', detail: '응답 없음' });
+        }
       }
     } else {
       rows.push({ name: 'CF Worker', level: 'warn', detail: '미설정' });
