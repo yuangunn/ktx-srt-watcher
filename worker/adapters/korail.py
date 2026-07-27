@@ -134,6 +134,23 @@ class KorailProvider:
             is_standby=is_standby,
         )
 
+    def paid_reservation_ids(self) -> set[str]:
+        """Ticketed (paid) reservations. korail2.tickets() lists issued tickets;
+        anything still sitting in reservations() is an unpaid hold."""
+        if self._client is None:
+            return set()
+        ids: set[str] = set()
+        try:
+            for t in self._client.tickets() or []:
+                for attr in ("rsv_id", "ticket_no", "car_no"):
+                    v = getattr(t, attr, None)
+                    if v:
+                        ids.add(str(v))
+        except Exception:
+            # Lookup unavailable → treat as "unknown", never as "paid".
+            return set()
+        return ids
+
 
 def _korail_deadline_iso(rsv) -> str:
     """Build an ISO 8601 KST timestamp from korail2's buy_limit_* fields.

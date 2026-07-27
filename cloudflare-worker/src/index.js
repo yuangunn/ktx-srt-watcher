@@ -133,7 +133,10 @@ async function dispatchWatcher(env, source) {
 // calls entirely. The free tier allows 10M reads/day vs only 1000 lists/day,
 // so one `.get("all")` per minute (1440/day) stays well within free limits.
 
-const REMINDER_OFFSETS_MIN = [5, 10, 15, 19];
+// Payment-deadline reminders, in minutes after the hold was placed (~20 min
+// window). Dense near the end so a sleeping user gets several chances: the
+// final stretch fires every minute rather than once.
+const REMINDER_OFFSETS_MIN = [3, 6, 9, 12, 14, 15, 16, 17, 18, 19];
 const ALL_KEY = "all";
 
 async function getAllReminders(env) {
@@ -162,7 +165,9 @@ async function scheduleReminder(env, body) {
     reminders.push({
       trigger_at_ms: triggerAtMs,
       remaining_min: remainingMin,
-      kind: offsetMin === Math.max(...REMINDER_OFFSETS_MIN) ? "final" : "warn",
+      // Anything inside the last 5 minutes reads as urgent, not just the
+      // single latest offset — these are the ones that must cut through.
+      kind: remainingMin <= 5 ? "final" : "warn",
       sent: false,
     });
   }
