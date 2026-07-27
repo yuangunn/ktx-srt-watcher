@@ -1,0 +1,78 @@
+name: deploy-worker
+
+# Deploys the Cloudflare Worker whenever its source changes on main, so the
+# cron bridge never depends on one particular laptop having wrangler logged in.
+#
+# Setup (one time):
+#   1. Cloudflare dashboard → My Profile → API Tokens → Create Token
+#      → "Edit Cloudflare Workers" template → Create
+#   2. Repo → Settings → Secrets and variables → Actions → New repository secret
+#      → CLOUDFLARE_API_TOKEN = the token from step 1
+#   3. (only if your Cloudflare login has more than one account)
+#      → CLOUDFLARE_ACCOUNT_ID = the account id shown in the dashboard URL
+#
+# Secrets set with `wrangler secret put` (GITHUB_TOKEN, TELEGRAM_*,
+# REMINDER_TOKEN) live in Cloudflare, not here — deploying does not touch them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+# Never run two deploys at once; the newest source is the one we want live.
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # No secret = nothing to deploy with. Skip cleanly instead of failing every
+    # push, so a fork (or this repo before step 2 above) stays green.
+    if: github.repository == 'yuangunn/ktx-srt-watcher'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cloudflare-worker/package-lock.json
+
+      - name: Install wrangler
+        working-directory: cloudflare-worker
+        run: npm ci
+
+      - name: Deploy
+        id: deploy
+        working-directory: cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Empty when unset, which wrangler treats as "not provided".
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN secret is not set — skipping deploy."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npx wrangler deploy
+
+      - name: Verify the deployed Worker answers
+        if: steps.deploy.outputs.skipped != 'true'
+        run: |
+          url="https://ktx-srt-watcher-cron.rms6654.workers.dev/health"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)
+            if [ "$code" = "200" ]; then
+              echo "health OK"
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code — retrying"
+            sleep 5
+          done
+          echo "::error::Worker did not return 200 from /health after deploy"
+          exit 1
