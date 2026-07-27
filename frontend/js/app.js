@@ -1366,10 +1366,28 @@ async function registerSW() {
   }
 }
 
+// ----- zoom lock ------------------------------------------------------------
+
+// Native apps don't rubber-band their whole UI under two fingers, and a
+// half-zoomed fixed layout (tabbar, FAB, sheets) just looks broken.  The
+// viewport meta covers standalone WebKit; Safari's browser mode ignores
+// user-scalable, so block the gestures directly there.  Single-finger
+// scrolling is untouched — only multi-touch and the iOS gesture* events go.
+function lockZoom() {
+  const block = e => e.preventDefault();
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => {
+    document.addEventListener(type, block, { passive: false });
+  });
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+}
+
 // ----- bootstrap ------------------------------------------------------------
 
 async function boot() {
   applyTheme(loadTheme());
+  lockZoom();
   registerSW();
   const creds = loadCreds();
   if (!creds) {
