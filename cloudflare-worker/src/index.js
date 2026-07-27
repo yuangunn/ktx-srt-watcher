@@ -18,6 +18,11 @@
 //   POST /reminder/schedule  worker.main calls this after a successful
 //                            auto-reservation; auth: Bearer REMINDER_TOKEN
 
+// Read-only endpoints are public by design (liveness + the user's own state
+// mirror), so a wildcard origin costs nothing.  The auth-gated routes
+// deliberately stay without it — no browser needs to read their bodies.
+const CORS = { "Access-Control-Allow-Origin": "*" };
+
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "*/5 * * * *") {
@@ -36,7 +41,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
-      return text("OK · ktx-srt-watcher cron bridge\n");
+      // CORS is required: the PWA health card fetches this cross-origin from
+      // Pages.  Without the header the browser rejects the response and the
+      // card reports the Worker dead while it is answering 200 just fine.
+      return text("OK · ktx-srt-watcher cron bridge\n", 200, CORS);
     }
     if (url.pathname === "/dispatch" && request.method === "POST") {
       try {
@@ -92,7 +100,7 @@ export default {
       await env.STATE.put("current", body);
       return text("stored\n", 202);
     }
-    return text("ktx-srt-watcher cron bridge\n");
+    return text("ktx-srt-watcher cron bridge\n", 200, CORS);
   },
 };
 
@@ -460,9 +468,9 @@ function ghHeaders(env) {
   };
 }
 
-function text(body, status = 200) {
+function text(body, status = 200, extraHeaders) {
   return new Response(body, {
     status,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+    headers: { "Content-Type": "text/plain; charset=utf-8", ...extraHeaders },
   });
 }
