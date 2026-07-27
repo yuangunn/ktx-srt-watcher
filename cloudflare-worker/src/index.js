@@ -12,16 +12,86 @@
 //                     Uses a single .get() instead of .list() to stay within
 //                     the free tier (1000 list ops/day limit).
 //
-// HTTP surface:
-//   GET  /health             plain liveness check
+// HTTP surface (auth is Bearer; APP_TOKEN = PWA, REMINDER_TOKEN = GHA):
+//   GET  /health             plain liveness check, public
 //   POST /dispatch           manually trigger a watcher run
 //   POST /reminder/schedule  worker.main calls this after a successful
-//                            auto-reservation; auth: Bearer REMINDER_TOKEN
+//                            auto-reservation; REMINDER_TOKEN
+//   GET  /config             watch list; APP_TOKEN or REMINDER_TOKEN
+//   PUT  /config             PWA writes the watch list; APP_TOKEN
+//   GET  /config/backups     last CONFIG_BACKUPS versions; APP_TOKEN
+//   GET  /state              poll state; APP_TOKEN or REMINDER_TOKEN
+//   PUT  /state              GHA watcher writes state; REMINDER_TOKEN
+//
+// config.json and state.json used to be committed to this (public) repo.
+// Watch ids embed the route and travel date — "부산-동탄-20260817-d62n" —
+// so anyone could read when the user's home would be empty.  Both now live
+// in the STATE KV namespace and are served only against a token.
 
-// Read-only endpoints are public by design (liveness + the user's own state
-// mirror), so a wildcard origin costs nothing.  The auth-gated routes
-// deliberately stay without it — no browser needs to read their bodies.
+// /health is public by design (liveness), so a wildcard origin costs nothing.
+// The data routes below are browser-facing too, but gated on a bearer token —
+// wildcard is still safe there because the token is an explicit header, never
+// an ambient credential a hostile page could ride on.
 const CORS = { "Access-Control-Allow-Origin": "*" };
+const CORS_PREFLIGHT = {
+  ...CORS,
+  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Max-Age": "86400",
+};
+
+// KV keys inside the STATE namespace.
+const STATE_KEY = "current";
+const CONFIG_KEY = "config";
+
+// Two callers, two secrets.  APP_TOKEN lives in the PWA (extractable from the
+// user's own device); REMINDER_TOKEN lives in GHA secrets.  Keeping them
+// separate means a leaked app token can't schedule reminders or write state.
+function authorized(request, env, ...allowed) {
+  const auth = request.headers.get("authorization") || "";
+  return allowed.some(t => t && auth === `Bearer ${t}`);
+}
+
+function json(body, status = 200) {
+  return new Response(typeof body === "string" ? body : JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      ...CORS,
+    },
+  });
+}
+
+// Depth of the config backup ring.  Small on purpose: this guards against a
+// bad write from the app, not against long-term data loss.
+const CONFIG_BACKUPS = 5;
+
+// Shift bak:0..n-1 down one slot and store the previous config at bak:0.
+async function rotateConfigBackups(env, prevBody) {
+  for (let i = CONFIG_BACKUPS - 1; i > 0; i--) {
+    const older = await env.STATE.get(`${CONFIG_KEY}:bak:${i - 1}`);
+    if (older) await env.STATE.put(`${CONFIG_KEY}:bak:${i}`, older);
+  }
+  await env.STATE.put(`${CONFIG_KEY}:bak:0`, prevBody);
+}
+
+// One-time migration: until config.json / state.json are deleted from the
+// repo, an empty KV falls back to the committed file and seeds itself.  Once
+// the files are gone this returns null and the KV value is the only source.
+async function bootstrapFromRepo(env, filename) {
+  const url = `https://raw.githubusercontent.com/${env.GITHUB_REPO}/main/${filename}`;
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "ktx-srt-watcher-cf-bridge" } });
+    if (!res.ok) return null;
+    const text = await res.text();
+    JSON.parse(text); // reject anything that isn't valid JSON
+    return text;
+  } catch (e) {
+    console.error(`bootstrap ${filename} failed: ${e.message}`);
+    return null;
+  }
+}
 
 export default {
   async scheduled(event, env, ctx) {
@@ -67,38 +137,82 @@ export default {
         return text(`error: ${e.message}\n`, 500);
       }
     }
-    // Public GET: PWA reads the latest state mirror.  Returns 404 if no
-    // state has been pushed yet, in which case the PWA falls back to
-    // GitHub Contents API.  No auth — the data is the user's own
-    // notification history, not secrets.
-    if (url.pathname === "/state" && request.method === "GET") {
-      const stored = await env.STATE.get("current");
-      if (!stored) return text("no state mirror yet\n", 404);
-      return new Response(stored, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Cache-Control": "no-store",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+    // Browsers preflight any request carrying an Authorization header.
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_PREFLIGHT });
     }
-    // Auth-required PUT: GHA watcher writes the mirror after every run.
-    // Body is the raw state.json contents; we store as-is.
+
+    // state.json now lives here, not in the public repo — watch ids embed the
+    // route and travel date, so this is no longer readable without a token.
+    if (url.pathname === "/state" && request.method === "GET") {
+      if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      let stored = await env.STATE.get(STATE_KEY);
+      if (!stored) {
+        stored = await bootstrapFromRepo(env, "state.json");
+        if (stored) await env.STATE.put(STATE_KEY, stored);
+      }
+      if (!stored) return text("no state yet\n", 404);
+      return json(stored);
+    }
+    // The GHA watcher is the only writer.
     if (url.pathname === "/state" && request.method === "PUT") {
-      const auth = request.headers.get("authorization") || "";
-      if (auth !== `Bearer ${env.REMINDER_TOKEN}`) {
+      if (!authorized(request, env, env.REMINDER_TOKEN)) {
         return text("unauthorized\n", 401);
       }
       const body = await request.text();
-      // Validate it parses as JSON before storing
       try {
         JSON.parse(body);
       } catch (e) {
         return text(`invalid JSON: ${e.message}\n`, 400);
       }
-      await env.STATE.put("current", body);
+      await env.STATE.put(STATE_KEY, body);
       return text("stored\n", 202);
+    }
+
+    // config.json lives here too.  Read by both the PWA and the watcher.
+    if (url.pathname === "/config" && request.method === "GET") {
+      if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      let stored = await env.STATE.get(CONFIG_KEY);
+      if (!stored) {
+        stored = await bootstrapFromRepo(env, "config.json");
+        if (stored) await env.STATE.put(CONFIG_KEY, stored);
+      }
+      if (!stored) return text("no config yet\n", 404);
+      return json(stored);
+    }
+    // The PWA is the only writer.  Previous versions are kept in a small ring
+    // so a bad write from the app doesn't destroy the watch list outright —
+    // KV has no history of its own and this is now the only copy.
+    if (url.pathname === "/config" && request.method === "PUT") {
+      if (!authorized(request, env, env.APP_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      const body = await request.text();
+      try {
+        JSON.parse(body);
+      } catch (e) {
+        return text(`invalid JSON: ${e.message}\n`, 400);
+      }
+      const prev = await env.STATE.get(CONFIG_KEY);
+      if (prev) await rotateConfigBackups(env, prev);
+      await env.STATE.put(CONFIG_KEY, body);
+      return text("stored\n", 202);
+    }
+    // Read-only view of the backup ring, newest first, for manual recovery.
+    if (url.pathname === "/config/backups" && request.method === "GET") {
+      if (!authorized(request, env, env.APP_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      const out = [];
+      for (let i = 0; i < CONFIG_BACKUPS; i++) {
+        const v = await env.STATE.get(`${CONFIG_KEY}:bak:${i}`);
+        if (v) out.push(JSON.parse(v));
+      }
+      return json(out);
     }
     return text("ktx-srt-watcher cron bridge\n", 200, CORS);
   },
@@ -271,28 +385,9 @@ async function sendTelegram(env, body) {
 const HEARTBEAT_STALE_HOURS = 6;
 
 async function heartbeatCheck(env) {
-  let stateJson;
-  try {
-    const url = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/state.json?ref=main`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "ktx-srt-watcher-cf-bridge",
-      },
-    });
-    if (!res.ok) {
-      console.error(`heartbeat: state.json fetch failed: ${res.status}`);
-      return;
-    }
-    const data = await res.json();
-    const decoded = atob(data.content.replace(/\n/g, ""));
-    stateJson = JSON.parse(new TextDecoder().decode(
-      Uint8Array.from(decoded, c => c.charCodeAt(0)),
-    ));
-  } catch (e) {
-    console.error(`heartbeat: parse error: ${e.message}`);
+  const stateJson = await readStateKV(env);
+  if (!stateJson) {
+    console.error("heartbeat: no state in KV");
     return;
   }
 
@@ -416,23 +511,13 @@ async function weeklySummary(env) {
   // State snapshot for watch count
   let watchCount = 0;
   let totalNotified = 0;
-  try {
-    const stateUrl = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/state.json?ref=main`;
-    const res = await fetch(stateUrl, { headers: ghHeaders(env) });
-    if (res.ok) {
-      const meta = await res.json();
-      const decoded = atob(meta.content.replace(/\n/g, ""));
-      const state = JSON.parse(new TextDecoder().decode(
-        Uint8Array.from(decoded, c => c.charCodeAt(0)),
-      ));
-      const watches = state.watches || {};
-      watchCount = Object.keys(watches).length;
-      for (const w of Object.values(watches)) {
-        totalNotified += (w.notified_train_ids || []).length;
-      }
+  const state = await readStateKV(env);
+  if (state) {
+    const watches = state.watches || {};
+    watchCount = Object.keys(watches).length;
+    for (const w of Object.values(watches)) {
+      totalNotified += (w.notified_train_ids || []).length;
     }
-  } catch (e) {
-    console.error(`weekly: state.json fetch failed: ${e.message}`);
   }
 
   const eventLabel = { schedule: "cron(GHA)", workflow_dispatch: "수동", repository_dispatch: "CF cron", push: "config 변경" };
@@ -457,6 +542,23 @@ async function weeklySummary(env) {
 
   await sendTelegram(env, lines.join("\n"));
   console.log(`[${new Date().toISOString()}] weekly summary sent (${runs.length} runs, ${watchCount} watches)`);
+}
+
+// Shared by the cron handlers: state now lives in KV, not in the repo.
+// Falls back to the committed file until it is deleted (see bootstrapFromRepo).
+async function readStateKV(env) {
+  let stored = await env.STATE.get(STATE_KEY);
+  if (!stored) {
+    stored = await bootstrapFromRepo(env, "state.json");
+    if (stored) await env.STATE.put(STATE_KEY, stored);
+  }
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored);
+  } catch (e) {
+    console.error(`state KV parse error: ${e.message}`);
+    return null;
+  }
 }
 
 function ghHeaders(env) {
