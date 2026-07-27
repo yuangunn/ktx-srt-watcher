@@ -13,12 +13,12 @@ on:
   workflow_dispatch:                   # PWA "지금 확인" / 수동 실행
   repository_dispatch:
     types: [cron-tick]                 # CF Worker 정확한 cron
-  push:
-    paths:
-      - 'config.json'                  # config 변경 즉시 1회 실행
 
+# 이 워크플로는 더 이상 저장소에 쓰지 않습니다. config/state는 CF KV에 있고,
+# PWA에서 config를 저장해도 커밋이 없으므로 push 트리거도 없앴습니다 —
+# 변경은 다음 정규 폴링에서 반영됩니다.
 permissions:
-  contents: write             # state.json 커밋용
+  contents: read
 
 concurrency:
   # cancel-in-progress: a newer tick supersedes an older queued one. With CF
@@ -42,7 +42,10 @@ jobs:
         id: gate
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-        # python3 is preinstalled on ubuntu-latest; the gate needs no pip deps.
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
+        # python3 is preinstalled on ubuntu-latest; the gate needs no pip deps
+        # (worker.remote is stdlib-only for exactly this reason).
         run: python3 -m worker.gate >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
@@ -69,43 +72,3 @@ jobs:
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
           REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
         run: python -m worker.main
-
-      - name: Commit state
-        if: steps.gate.outputs.poll == 'true'
-        run: |
-          set +e
-          git config user.name "ticket-watcher-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Snapshot our run's state before any git ops touch the working tree.
-          # Subsequent attempts will reset --hard to remote and merge our
-          # changes back in via worker.state's semantic merge.
-          cp state.json /tmp/state.ours.json
-
-          for attempt in 1 2 3 4 5 6 7 8; do
-            git fetch origin main || { sleep $((attempt)); continue; }
-            git reset --hard origin/main
-            python -m worker.state merge /tmp/state.ours.json state.json
-            git add state.json
-            if git diff --staged --quiet; then
-              echo "state.json already reflects our run on attempt $attempt — nothing to commit"
-              # Mirror to CF KV anyway; PWA reads from there preferentially
-              python -m worker.state push-mirror state.json || true
-              exit 0
-            fi
-            git commit -m "chore(state): update [skip ci]"
-            if git push; then
-              echo "push succeeded on attempt $attempt"
-              python -m worker.state push-mirror state.json || true
-              exit 0
-            fi
-            echo "push attempt $attempt failed (likely concurrent push), retrying..."
-            sleep $((attempt))
-          done
-
-          # Losing the push race is harmless: the next run reconciles our state
-          # via worker.state's semantic merge. Mirror to CF KV so the PWA still
-          # sees fresh data, and exit 0 so a lost race never marks the job failed.
-          echo "state.json push lost the race after 8 attempts; next run will merge" >&2
-          python -m worker.state push-mirror /tmp/state.ours.json || true
-          exit 0

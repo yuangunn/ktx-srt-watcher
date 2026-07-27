@@ -48,8 +48,12 @@ EVENT_TYPE = "cron-tick"
 #   GITHUB_TOKEN        Fine-grained PAT, Contents:rw + Actions:rw on the repo
 #   TELEGRAM_BOT_TOKEN  Same bot used by the GHA watcher
 #   TELEGRAM_CHAT_ID    User's Telegram chat id
-#   REMINDER_TOKEN      Shared secret to authenticate worker.main → CF
-#                       calls to /reminder/schedule (random, opaque)
+#   REMINDER_TOKEN      Shared secret for the GHA watcher → CF calls
+#                       (/reminder/schedule, /config GET, /state GET+PUT)
+#   APP_TOKEN           Shared secret for the PWA → CF calls
+#                       (/config GET+PUT, /state GET). Separate from
+#                       REMINDER_TOKEN: it lives in the browser, so a leak
+#                       must not grant state writes or reminder scheduling.
 
 [observability]
 enabled = true
