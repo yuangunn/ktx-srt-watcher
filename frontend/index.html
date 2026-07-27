@@ -11,9 +11,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="발권창구">
   <meta name="description" content="KTX/SRT 취소표 감시 워치 관리">
-  <!-- Optional: PWA reads state mirror here before falling back to GitHub
-       Contents API. Forks: update to your own Cloudflare Worker URL,
-       or remove the content to disable the mirror entirely. -->
+  <!-- The watch list and poll state are stored here, not in the repo.
+       Forks: point this at your own Cloudflare Worker. -->
   <meta name="cf-worker-url" content="https://ktx-srt-watcher-cron.rms6654.workers.dev">
   <title>발권창구</title>
   <link rel="manifest" href="./manifest.json">
@@ -40,15 +39,20 @@
       <p class="setup__eyebrow">초기 연결</p>
       <h1 class="setup__title">GitHub 연결</h1>
       <p class="setup__lede">
-        PWA가 <code>config.json</code>을 읽고 쓰려면 본인 GitHub 저장소에 접근할 권한이 필요합니다.
+        "지금 확인"과 실행 기록 조회에 GitHub 접근 권한이 필요합니다.
         Personal Access Token을 발급받아 아래에 붙여 넣으세요. 토큰은 이 기기 <code>localStorage</code>에만 저장됩니다.
       </p>
       <ol class="setup__steps">
         <li>GitHub → <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">Settings → Fine-grained tokens</a> → Generate new token</li>
         <li>Repository access: <strong>Only select repositories</strong> → <code>ktx-srt-watcher</code> 선택</li>
-        <li>Permissions → Repository permissions → <strong>Contents: Read and write</strong>, <strong>Actions: Read and write</strong> ("지금 확인" + 최근 실행 목록용)</li>
+        <li>Permissions → Repository permissions → <strong>Contents: Read-only</strong>, <strong>Actions: Read and write</strong> ("지금 확인" + 최근 실행 목록용)</li>
         <li>발급된 <code>github_pat_…</code> 문자열을 아래에 붙여 넣기</li>
       </ol>
+      <p class="setup__lede">
+        감시 목록과 폴링 상태는 공개 저장소가 아니라 Cloudflare Worker에 저장됩니다.
+        Worker에 설정한 <code>APP_TOKEN</code>과 같은 값을 앱 토큰 칸에 넣어 주세요
+        (<code>npx wrangler secret put APP_TOKEN</code>).
+      </p>
       <form class="setup__form" id="setup-form" autocomplete="off">
         <label class="field">
           <span class="field__label">Repository</span>
@@ -57,6 +61,10 @@
         <label class="field">
           <span class="field__label">Personal Access Token</span>
           <input class="field__input" name="pat" type="password" placeholder="github_pat_…" required>
+        </label>
+        <label class="field">
+          <span class="field__label">앱 토큰 (Worker APP_TOKEN)</span>
+          <input class="field__input" name="app_token" type="password" placeholder="APP_TOKEN" required>
         </label>
         <p class="setup__error" id="setup-error" hidden></p>
         <button class="btn btn--primary" type="submit">연결</button>

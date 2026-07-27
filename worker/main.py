@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import notifier
+from . import remote
 from . import state as state_mod
 from .adapters.base import Provider
 from .adapters.korail import KorailProvider
@@ -25,9 +26,6 @@ from .throttle import (
 )
 
 log = logging.getLogger("ticket_watcher")
-
-CONFIG_PATH = Path("config.json")
-STATE_PATH = Path("state.json")
 
 NotifyFn = Callable[..., None]   # (Watch, list[Train], *, silent: bool=False)
 SummaryFn = Callable[..., None]  # (list[Watch], *, silent: bool=False)
@@ -49,8 +47,14 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    cfg = load_config(CONFIG_PATH)
-    s = state_mod.read_state(STATE_PATH)
+    try:
+        cfg = load_config()
+        s = remote.fetch_state()
+    except remote.RemoteError as e:
+        # No config means nothing to poll. Fail the job loudly rather than
+        # log a run that silently checked nothing.
+        log.error("설정을 불러오지 못했습니다: %s", e)
+        return 1
     creds = load_credentials()
     providers: dict[str, Provider] = {
         "korail": KorailProvider(),
@@ -75,7 +79,13 @@ def main() -> int:
     state_mod.prune_orphan_flags(
         s, [w.get("id") for w in cfg.get("watches", []) if w.get("id")]
     )
-    state_mod.write_state(STATE_PATH, s)
+    try:
+        remote.push_state(s)
+    except remote.RemoteError as e:
+        # The poll already happened and any alerts already went out; losing the
+        # write costs dedup history (a seat may be re-notified next run), so
+        # log it rather than fail a run that did its job.
+        log.error("상태 저장 실패: %s", e)
     return 0
 
 
@@ -355,8 +365,9 @@ def _process_watch(
     return len(new_trains)
 
 
-def load_config(path: Path | str) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+def load_config() -> dict[str, Any]:
+    """Watch list, from CF KV. See worker/remote.py for why it is not in git."""
+    return remote.fetch_config()
 
 
 def load_credentials() -> dict[str, tuple[str, str]]:

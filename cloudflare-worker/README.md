@@ -35,6 +35,33 @@ Copy the `github_pat_…` and store as a Worker secret (paste when prompted):
 npx wrangler secret put GITHUB_TOKEN
 ```
 
+## Data store
+
+`config.json` (watch list) and `state.json` (poll state) are **not** in this
+repo.  Watch ids embed the route and travel date — `서울-대전-20260101-a1b2` —
+so committing them to a public repo published when the user would be away.
+Both live in the `STATE` KV namespace under the keys `config` and `current`,
+and are served only against a bearer token:
+
+| route | who | token |
+|---|---|---|
+| `GET /config` | PWA, watcher | `APP_TOKEN` or `REMINDER_TOKEN` |
+| `PUT /config` | PWA only | `APP_TOKEN` |
+| `GET /config/backups` | PWA | `APP_TOKEN` |
+| `GET /state` | PWA, watcher | `APP_TOKEN` or `REMINDER_TOKEN` |
+| `PUT /state` | watcher only | `REMINDER_TOKEN` |
+
+`PUT /config` keeps the previous 5 versions in a backup ring — KV has no
+history of its own and this is now the only copy of the watch list.
+
+Set the app token once:
+
+```bash
+npx wrangler secret put APP_TOKEN
+```
+
+Use the same value in the PWA's setup screen.
+
 ## Deploy
 
 Normally you don't: pushing a change under `cloudflare-worker/` to `main`

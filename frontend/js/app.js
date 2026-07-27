@@ -1,8 +1,10 @@
 // ============================================================================
 // 발권창구 — frontend logic
-// Reads/writes config.json on a public GitHub repo via Contents API.
-// State is intentionally simple: localStorage holds {repo, pat}; everything
-// else is derived from config.json (writes) and state.json (reads).
+// The watch list and poll state live in the Cloudflare Worker's KV, reached
+// with an app token — they used to be committed to a public repo, where the
+// watch ids published the user's travel plans. The GitHub PAT remains for
+// Actions only (manual run + run history). localStorage holds
+// {repo, pat, appToken}.
 // ============================================================================
 
 const STORAGE_KEY = 'balgwon.config';
@@ -79,7 +81,7 @@ function loadCreds() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const v = JSON.parse(raw);
-    if (!v?.repo || !v?.pat) return null;
+    if (!v?.repo || !v?.pat || !v?.appToken) return null;
     return v;
   } catch {
     return null;
@@ -87,6 +89,58 @@ function loadCreds() {
 }
 function saveCreds(creds) { localStorage.setItem(STORAGE_KEY, JSON.stringify(creds)); }
 function clearCreds() { localStorage.removeItem(STORAGE_KEY); }
+
+// ----- cloudflare worker store ----------------------------------------------
+
+// config and state live in the Worker's KV, not in the (public) repo — watch
+// ids embed the route and travel date, so committing them published the user's
+// movements. The GitHub PAT is still used, but only for Actions: dispatching
+// a manual run and reading run history for the health card.
+class CFStore {
+  constructor({ baseUrl, token }) {
+    this.baseUrl = (baseUrl || '').replace(/\/$/, '');
+    this.token = token;
+  }
+  get enabled() { return !!(this.baseUrl && this.token); }
+  async _req(path, { method = 'GET', body } = {}) {
+    if (!this.enabled) throw new Error('CF Worker URL 또는 앱 토큰이 없습니다');
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        ...(body ? { 'Content-Type': 'application/json; charset=utf-8' } : {}),
+      },
+      ...(body ? { body } : {}),
+    });
+    if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`);
+    return res;
+  }
+  // 404 = nothing stored yet (fresh install), which is not an error.
+  async getConfig() {
+    try {
+      const res = await this._req('/config');
+      return await res.json();
+    } catch (e) {
+      if (String(e.message).includes('→ 404')) return null;
+      throw e;
+    }
+  }
+  async putConfig(config) {
+    await this._req('/config', { method: 'PUT', body: JSON.stringify(config, null, 2) + '\n' });
+  }
+  async getState() {
+    try {
+      const res = await this._req('/state');
+      return await res.json();
+    } catch (e) {
+      if (String(e.message).includes('→ 404')) return null;
+      throw e;
+    }
+  }
+  // Setup probe: a 404 means the token works and nothing is stored yet.
+  async ping() { await this.getConfig(); }
+}
 
 // ----- github api -----------------------------------------------------------
 
@@ -499,13 +553,12 @@ class App {
     this.gh = new GitHub(creds);
     this.config = emptyConfig();
     this.state = null;
-    this.configSha = null;
     this.cronIntervalMin = 10;
     this._countdownTimer = null;
     this.tab = 'watch';
-    // CF Worker URL for state mirror reads (optional; falls back to GitHub)
     const meta = document.querySelector('meta[name="cf-worker-url"]');
     this._cfWorkerUrl = (meta?.content || '').trim();
+    this.cf = new CFStore({ baseUrl: this._cfWorkerUrl, token: creds.appToken });
   }
 
   async start() {
@@ -597,31 +650,26 @@ class App {
 
   async _loadAll() {
     try {
-      const [{ sha, content }, stateFile, wranglerFile, workflowFile] = await Promise.all([
-        this.gh.getFile('config.json'),
-        this.gh.getFile('state.json').catch(() => ({ sha: null, content: null })),
+      // config/state come from CF KV; only the two source files that describe
+      // the polling cadence still come from the repo (they are code, not data).
+      const [config, state, wranglerFile, workflowFile] = await Promise.all([
+        this.cf.getConfig(),
+        this.cf.getState().catch(() => null),
         this.gh.getFile('cloudflare-worker/wrangler.toml').catch(() => ({ sha: null, content: null })),
         this.gh.getFile('.github/workflows/watch.yml').catch(() => ({ sha: null, content: null })),
       ]);
-      this.configSha = sha;
-      this.config = content ? JSON.parse(content) : emptyConfig();
-      this.state = stateFile?.content ? JSON.parse(stateFile.content) : null;
+      this.config = config || emptyConfig();
+      this.state = state;
       // Prefer the CF Worker cron over the GHA fallback when present.
       if (!this._parseCronFromWrangler(wranglerFile?.content)) {
         this._parseCronFromWorkflow(workflowFile?.content);
       }
-      // Best-effort: pull the fresher state mirror from CF Worker /state
-      // if available. The wrangler.toml fetch already gave us the worker
-      // URL family; we derive the public CF URL from that and try.
-      // Falls back silently to the GitHub state.json we already loaded.
-      const fresher = await this._fetchStateMirror().catch(() => null);
-      if (fresher) this.state = fresher;
     } catch (e) {
       if (this._isAuthError(e)) {
         this._handleAuthFailure();
         return;
       }
-      this._toast(`config.json 로드 실패 — ${e.message}`);
+      this._toast(`설정 로드 실패 — ${e.message}`);
       this.config = emptyConfig();
     }
     this._renderHeader();
@@ -632,15 +680,6 @@ class App {
     this._loadHealth();
   }
 
-  async _fetchStateMirror() {
-    // CF Worker URL is read from the <meta name="cf-worker-url"> tag
-    // in index.html. Empty / missing meta = mirror disabled, falls back
-    // silently to the GitHub Contents API state.json we already loaded.
-    if (!this._cfWorkerUrl) return null;
-    const res = await fetch(`${this._cfWorkerUrl.replace(/\/$/, '')}/state`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.json();
-  }
   _parseCronFromWrangler(tomlText) {
     if (!tomlText) return false;
     const m = tomlText.match(/crons\s*=\s*\[\s*"([^"]+)"/);
@@ -1168,20 +1207,12 @@ class App {
   }
 
   async _save(message) {
-    const body = JSON.stringify(this.config, null, 2) + '\n';
+    // KV is last-write-wins, so there is no sha to reconcile. The Worker keeps
+    // the previous few versions (/config/backups) in case a write goes wrong.
     try {
-      const res = await this.gh.putFile('config.json', { content: body, sha: this.configSha, message });
-      this.configSha = res.content?.sha ?? this.configSha;
+      await this.cf.putConfig(this.config);
     } catch (e) {
-      if (this._isAuthError(e)) { this._handleAuthFailure(); return; }
-      if (String(e.message).includes('409') || String(e.message).includes('422')) {
-        const fresh = await this.gh.getFile('config.json');
-        this.configSha = fresh.sha;
-        this.config = JSON.parse(fresh.content || JSON.stringify(emptyConfig()));
-        this._toast('충돌 발생 — 최신 상태를 다시 불러왔습니다. 변경 사항을 다시 적용해 주세요.');
-      } else {
-        this._toast(`저장 실패 — ${e.message}`);
-      }
+      this._toast(`저장 실패 — ${e.message}`);
     }
   }
 
@@ -1208,9 +1239,8 @@ class App {
       for (let i = 0; i < 14 && !detected; i++) {
         await new Promise(r => setTimeout(r, 5000));
         try {
-          const fresh = await this.gh.getFile('state.json');
-          if (fresh?.content) {
-            const ns = JSON.parse(fresh.content);
+          const ns = await this.cf.getState();
+          if (ns) {
             if (ns.last_run && new Date(ns.last_run).getTime() >= startedAt - 5000) {
               this.state = ns;
               detected = true;
@@ -1329,17 +1359,27 @@ function renderSetup(onSubmit) {
     const fd = new FormData(e.target);
     const repo = String(fd.get('repo')).trim();
     const pat = String(fd.get('pat')).trim();
+    const appToken = String(fd.get('app_token')).trim();
     const errEl = $('#setup-error');
     errEl.hidden = true;
+    // Probe both stores separately so the error names the one that failed.
     try {
-      const probe = new GitHub({ repo, pat });
-      await probe.pingAuth();
-      saveCreds({ repo, pat });
-      onSubmit({ repo, pat });
+      await new GitHub({ repo, pat }).pingAuth();
     } catch (err) {
-      errEl.textContent = `연결 실패 — ${err.message}. PAT 권한과 repo 이름을 확인해 주세요.`;
+      errEl.textContent = `GitHub 연결 실패 — ${err.message}. PAT 권한과 repo 이름을 확인해 주세요.`;
       errEl.hidden = false;
+      return;
     }
+    const meta = document.querySelector('meta[name="cf-worker-url"]');
+    try {
+      await new CFStore({ baseUrl: meta?.content || '', token: appToken }).ping();
+    } catch (err) {
+      errEl.textContent = `앱 토큰 확인 실패 — ${err.message}. Worker의 APP_TOKEN과 같은 값인지 확인해 주세요.`;
+      errEl.hidden = false;
+      return;
+    }
+    saveCreds({ repo, pat, appToken });
+    onSubmit({ repo, pat, appToken });
   });
 }
 

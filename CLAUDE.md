@@ -12,18 +12,23 @@ PWA(GitHub Pages)에서 감시 조건을 추가/삭제.
 ## 아키텍처
 
 ```
-[아이폰 PWA] ─GitHub REST API→ config.json (repo)
-                                    ↓ push trigger
-                              [Actions cron]
-                                    ↓
-                        worker/main.py (Python 3.11)
-                          ├─ adapters/korail.py
-                          └─ adapters/srt.py
-                                    ↓ 새 좌석 감지
-                              notifier.py → 텔레그램
-                                    ↓
-                            state.json 커밋
+[아이폰 PWA] ──APP_TOKEN──→ [CF Worker KV] ←──REMINDER_TOKEN──┐
+                             config / state                   │
+                                    ↑ */5 repository_dispatch  │
+                              [Actions cron]                  │
+                                    ↓                         │
+                        worker/main.py (Python 3.11)          │
+                          ├─ adapters/korail.py               │
+                          └─ adapters/srt.py                  │
+                                    ↓ 새 좌석 감지              │
+                              notifier.py → 텔레그램            │
+                                    └─────────state PUT────────┘
 ```
+
+**config/state는 저장소에 커밋하지 않는다.** 워치 ID가 노선과 날짜를 그대로
+담고 있어(`서울-대전-20260101-a1b2`) 공개 저장소에 올리면 언제 집이 비는지가
+공개된다. 둘 다 CF Worker의 KV에 있고 토큰 없이는 읽히지 않는다. 저장소에는
+코드만 있다. PWA의 GitHub PAT는 이제 Actions 전용("지금 확인" + 실행 기록).
 
 ## 모듈 명세
 
@@ -74,11 +79,16 @@ SRT는 코레일톡/SRT 앱 딥링크 또는 웹 URL.
 - `SRT_ID`, `SRT_PW`
 - `TELEGRAM_BOT_TOKEN` (BotFather에서 발급)
 - `TELEGRAM_CHAT_ID` (본인 user id)
+- `CF_WORKER_URL`, `REMINDER_TOKEN` (config/state 저장소 접근)
+- `CLOUDFLARE_API_TOKEN` (worker 자동 배포)
+
+CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `REMINDER_TOKEN`, `APP_TOKEN`.
 
 ## PWA (`frontend/`)
-- 단일 페이지. config.json 항목 리스트/추가/삭제/토글
-- GitHub Personal Access Token (repo scope) 입력받아 localStorage 저장
-- GitHub Contents API로 config.json GET → 수정 → PUT (sha 포함)
+- 단일 페이지. 워치 항목 리스트/추가/삭제/토글
+- GitHub PAT(Actions 전용) + 앱 토큰(APP_TOKEN)을 localStorage 저장
+- CF Worker `/config` GET → 수정 → PUT (KV는 last-write-wins, sha 없음)
 - iOS 16.4+ 홈 화면 추가 시 푸시 알림 가능 (보조용, 주 알림은 텔레그램)
 - manifest.json: standalone, theme #1a1a1a
 - sw.js: offline shell만, 데이터는 항상 GitHub에서 fresh fetch
