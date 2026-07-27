@@ -112,11 +112,10 @@ def run_watches(
     quiet_start = settings_pre.get("quiet_hours_start") or None
     quiet_end = settings_pre.get("quiet_hours_end") or None
     is_manual_pre = event_name == "workflow_dispatch"
-    # "push" (config.json 변경 커밋) is treated as automated so it obeys the
-    # poll throttle: saving settings in the PWA shouldn't force an off-cadence
-    # poll (which, done repeatedly, looked like 1-min polling). The config
-    # change is picked up on the next scheduled poll instead. Only manual
-    # "지금 확인" (workflow_dispatch) bypasses the throttle.
+    # "push" stays in the automated set for safety: config no longer lives in
+    # git so saving settings makes no commit at all, but any future push-driven
+    # run should obey the throttle rather than force an off-cadence poll. Only
+    # manual "지금 확인" (workflow_dispatch) bypasses it.
     is_automated_pre = event_name in ("schedule", "repository_dispatch", "push")
     # Quiet hours suppress the notification *sound*, not the message.
     # Manual triggers (지금 확인) bypass quiet hours — user explicitly
@@ -289,7 +288,7 @@ def _process_watch(
 
     # Auto-reserve is one-shot: after a successful reservation the watch's
     # auto_reserve is self-disabled (recorded in state, since the worker can't
-    # edit config.json). This prevents re-reserving the same seat on every
+    # edit the watch). This prevents re-reserving the same seat on every
     # renotify poll, and lets the user re-enable from the PWA when they want
     # another. A prior success in state short-circuits here.
     if watch.auto_reserve and not state_mod.is_auto_reserve_disabled(state, watch.id):

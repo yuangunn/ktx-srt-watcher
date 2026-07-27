@@ -15,7 +15,7 @@ from typing import Any
 # Hard floor for any user-set poll interval (anti-bot / server load).
 MIN_POLL_INTERVAL_MIN = 10
 
-# Events that obey the throttle (automated cadence). "push" (config.json save)
+# Events that obey the throttle (automated cadence). "push"
 # is included so PWA setting changes don't force off-cadence polls; only manual
 # "지금 확인" (workflow_dispatch) bypasses.
 AUTOMATED_EVENTS = ("schedule", "repository_dispatch", "push")

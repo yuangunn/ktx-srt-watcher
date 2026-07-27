@@ -76,23 +76,6 @@ async function rotateConfigBackups(env, prevBody) {
   await env.STATE.put(`${CONFIG_KEY}:bak:0`, prevBody);
 }
 
-// One-time migration: until config.json / state.json are deleted from the
-// repo, an empty KV falls back to the committed file and seeds itself.  Once
-// the files are gone this returns null and the KV value is the only source.
-async function bootstrapFromRepo(env, filename) {
-  const url = `https://raw.githubusercontent.com/${env.GITHUB_REPO}/main/${filename}`;
-  try {
-    const res = await fetch(url, { headers: { "User-Agent": "ktx-srt-watcher-cf-bridge" } });
-    if (!res.ok) return null;
-    const text = await res.text();
-    JSON.parse(text); // reject anything that isn't valid JSON
-    return text;
-  } catch (e) {
-    console.error(`bootstrap ${filename} failed: ${e.message}`);
-    return null;
-  }
-}
-
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "*/5 * * * *") {
@@ -148,11 +131,7 @@ export default {
       if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
         return text("unauthorized\n", 401);
       }
-      let stored = await env.STATE.get(STATE_KEY);
-      if (!stored) {
-        stored = await bootstrapFromRepo(env, "state.json");
-        if (stored) await env.STATE.put(STATE_KEY, stored);
-      }
+      const stored = await env.STATE.get(STATE_KEY);
       if (!stored) return text("no state yet\n", 404);
       return json(stored);
     }
@@ -176,11 +155,7 @@ export default {
       if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
         return text("unauthorized\n", 401);
       }
-      let stored = await env.STATE.get(CONFIG_KEY);
-      if (!stored) {
-        stored = await bootstrapFromRepo(env, "config.json");
-        if (stored) await env.STATE.put(CONFIG_KEY, stored);
-      }
+      const stored = await env.STATE.get(CONFIG_KEY);
       if (!stored) return text("no config yet\n", 404);
       return json(stored);
     }
@@ -544,14 +519,9 @@ async function weeklySummary(env) {
   console.log(`[${new Date().toISOString()}] weekly summary sent (${runs.length} runs, ${watchCount} watches)`);
 }
 
-// Shared by the cron handlers: state now lives in KV, not in the repo.
-// Falls back to the committed file until it is deleted (see bootstrapFromRepo).
+// Shared by the cron handlers: state lives in KV, never in the repo.
 async function readStateKV(env) {
-  let stored = await env.STATE.get(STATE_KEY);
-  if (!stored) {
-    stored = await bootstrapFromRepo(env, "state.json");
-    if (stored) await env.STATE.put(STATE_KEY, stored);
-  }
+  const stored = await env.STATE.get(STATE_KEY);
   if (!stored) return null;
   try {
     return JSON.parse(stored);

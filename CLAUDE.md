@@ -52,7 +52,7 @@ class Provider(Protocol):
 - 그 외 동일
 
 ### `worker/matcher.py`
-config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌석만 반환 (state.json의 `notified_train_ids`와 비교).
+config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌석만 반환 (state의 `notified_train_ids`와 비교).
 
 ### `worker/state.py`
 - 읽기/쓰기 + atomic write (tmp → rename)
@@ -68,10 +68,10 @@ config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌
 SRT는 코레일톡/SRT 앱 딥링크 또는 웹 URL.
 
 ### `worker/main.py`
-1. config.json 로드 → active watch만 필터
+1. CF KV에서 config 로드 → active watch만 필터
 2. provider별로 그룹화, 각 adapter 로그인
 3. matcher 돌리고 신규 좌석 → notifier
-4. state.json 갱신 후 종료
+4. state를 CF KV에 PUT 후 종료
 5. **모든 예외는 catch & 로그**. 한 watch 실패가 전체 중단시키면 안 됨
 
 ## Secrets (repo Settings → Secrets and variables → Actions)

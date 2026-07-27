@@ -1,7 +1,8 @@
 // 발권창구 service worker — caches the app shell only.
-// Data (config.json / state.json) is always fetched fresh from GitHub.
+// Data (watch list / poll state) always goes to the network — it lives in
+// the CF Worker's KV and must never be served from cache.
 
-const VERSION = 'v27';
+const VERSION = 'v28';
 const SHELL = [
   './',
   './index.html',
