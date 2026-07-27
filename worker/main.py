@@ -72,6 +72,9 @@ def main() -> int:
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
     state_mod.prune_past_dates(s, today=now_iso[:10])
+    state_mod.prune_orphan_flags(
+        s, [w.get("id") for w in cfg.get("watches", []) if w.get("id")]
+    )
     state_mod.write_state(STATE_PATH, s)
     return 0
 
