@@ -37,7 +37,17 @@ npx wrangler secret put GITHUB_TOKEN
 
 ## Deploy
 
+Normally you don't: pushing a change under `cloudflare-worker/` to `main`
+triggers `.github/workflows/deploy-worker.yml`, which deploys and then checks
+`/health`.  That workflow needs one repo secret, `CLOUDFLARE_API_TOKEN`
+(Cloudflare → My Profile → API Tokens → "Edit Cloudflare Workers" template),
+plus `CLOUDFLARE_ACCOUNT_ID` only if your login has several accounts.
+
+To deploy by hand — from any machine, `wrangler login` is browser OAuth and
+existing Worker secrets survive a redeploy:
+
 ```bash
+npx wrangler login
 npx wrangler deploy
 ```
 
