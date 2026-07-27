@@ -215,11 +215,26 @@ class TestAutoReserveDisabled:
         state.disable_auto_reserve(s, "w1")
         assert s["auto_reserve_disabled"] == ["w1"]
 
-    def test_merge_unions_disabled(self):
-        a = {"watches": {}, "auto_reserve_disabled": ["w1"]}
-        b = {"watches": {}, "auto_reserve_disabled": ["w2"]}
-        merged = state.merge_states(a, b)
-        assert sorted(merged["auto_reserve_disabled"]) == ["w1", "w2"]
+    def test_merge_prefers_ours_for_disabled(self):
+        # "ours" wins rather than unioning: this run may have just re-armed a
+        # watch (hold expired unpaid), and a union would resurrect the remote's
+        # stale disable — leaving auto-reserve dead exactly when it must hunt.
+        ours = {"watches": {}, "auto_reserve_disabled": []}
+        remote = {"watches": {}, "auto_reserve_disabled": ["w1"]}
+        merged = state.merge_states(ours, remote)
+        assert merged.get("auto_reserve_disabled", []) == []
+
+    def test_merge_falls_back_to_remote_when_ours_absent(self):
+        ours = {"watches": {}}
+        remote = {"watches": {}, "auto_reserve_disabled": ["w1"]}
+        assert state.merge_states(ours, remote)["auto_reserve_disabled"] == ["w1"]
+
+    def test_merge_pending_reservations_ours_wins(self):
+        ours = {"watches": {}, "pending_reservations": {"w1": {"id": "NEW", "deadline": None}}}
+        remote = {"watches": {}, "pending_reservations": {"w1": {"id": "OLD", "deadline": None}, "w2": {"id": "R2"}}}
+        merged = state.merge_states(ours, remote)["pending_reservations"]
+        assert merged["w1"]["id"] == "NEW"
+        assert merged["w2"]["id"] == "R2"
 
     def test_prune_drops_disabled_for_removed_watch(self):
         s = {

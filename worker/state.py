@@ -78,6 +78,37 @@ def disable_auto_reserve(state: dict[str, Any], watch_id: str) -> None:
         lst.append(watch_id)
 
 
+def enable_auto_reserve(state: dict[str, Any], watch_id: str) -> None:
+    """Re-arm auto-reserve (hold expired unpaid → the seat is back in the pool)."""
+    lst = state.get("auto_reserve_disabled")
+    if lst and watch_id in lst:
+        lst.remove(watch_id)
+
+
+def set_pending_reservation(
+    state: dict[str, Any], watch_id: str, reservation_id: str, deadline_iso: str | None,
+) -> None:
+    """Remember the hold we just placed so a later run can judge its outcome.
+
+    Cleared when the reservation is confirmed paid (job done) or when the hold
+    expires unpaid (auto-reserve re-arms).
+    """
+    state.setdefault("pending_reservations", {})[watch_id] = {
+        "id": reservation_id,
+        "deadline": deadline_iso,
+    }
+
+
+def get_pending_reservation(state: dict[str, Any], watch_id: str) -> dict[str, Any] | None:
+    return (state.get("pending_reservations") or {}).get(watch_id)
+
+
+def clear_pending_reservation(state: dict[str, Any], watch_id: str) -> None:
+    pend = state.get("pending_reservations")
+    if pend and watch_id in pend:
+        del pend[watch_id]
+
+
 def mark_check(state: dict[str, Any], watch_id: str, when: str) -> None:
     _entry(state, watch_id)["last_check"] = when
 
@@ -162,12 +193,19 @@ def merge_states(ours: dict[str, Any], remote: dict[str, Any]) -> dict[str, Any]
         result["poll_history"] = merged_hist[-POLL_HISTORY_MAX:]
 
     # auto_reserve_disabled: union (a disable on either side sticks).
-    disabled = sorted(
-        set(ours.get("auto_reserve_disabled") or [])
-        | set(remote.get("auto_reserve_disabled") or [])
-    )
+    # auto_reserve_disabled: ours wins. A concurrent run may have re-armed a
+    # watch (hold expired) — union would resurrect the stale disable and leave
+    # auto-reserve dead, so prefer this run's view.
+    disabled = ours.get("auto_reserve_disabled")
+    if disabled is None:
+        disabled = remote.get("auto_reserve_disabled")
     if disabled:
-        result["auto_reserve_disabled"] = disabled
+        result["auto_reserve_disabled"] = sorted(set(disabled))
+
+    # pending_reservations: per-watch, ours wins (it reflects the newer poll).
+    pend = {**(remote.get("pending_reservations") or {}), **(ours.get("pending_reservations") or {})}
+    if pend:
+        result["pending_reservations"] = pend
 
     # Carry over any top-level keys we don't know about (forward compat)
     for k, v in {**remote, **ours}.items():
