@@ -10,6 +10,6 @@
     "secret:token": "wrangler secret put GITHUB_TOKEN"
   },
   "devDependencies": {
-    "wrangler": "^3.78.0"
+    "wrangler": "^4.114.0"
   }
 }
