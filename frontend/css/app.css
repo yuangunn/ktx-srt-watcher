@@ -87,6 +87,11 @@ html, body {
   line-height: 1.5;
   text-rendering: optimizeLegibility;
   transition: background .3s ease;
+  /* Native-app feel: pan/scroll stays, double-tap zoom goes.  Pinch is
+     handled by the viewport meta + the gesture* blockers in app.js. */
+  touch-action: manipulation;
+  /* Stop iOS from inflating text on rotate (breaks the fixed layout). */
+  -webkit-text-size-adjust: 100%;
 }
 body {
   min-height: 100dvh;
