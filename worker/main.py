@@ -39,6 +39,10 @@ ScheduleRemindersFn = Callable[[Watch, Train, "Reservation"], None]
 # already taken. Caps the burst of API calls into Korail/SRT per run.
 MAX_RESERVE_CANDIDATES = 3
 
+# Grace period after a hold's payment deadline before we declare it lapsed and
+# re-arm auto-reserve. Covers clock skew and late payment propagation.
+RE_ARM_GRACE_MIN = 3
+
 
 def main() -> int:
     logging.basicConfig(
@@ -63,6 +67,7 @@ def main() -> int:
         notify_reserve_failure_fn=notifier.notify_reservation_failure,
         schedule_reminders_fn=notifier.schedule_reminders,
         notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
+        notify_auto_reserve_rearmed_fn=notifier.notify_auto_reserve_rearmed,
         now_iso=now_iso,
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
@@ -84,6 +89,7 @@ def run_watches(
     notify_reserve_failure_fn: ReserveFailureFn | None = None,
     schedule_reminders_fn: ScheduleRemindersFn | None = None,
     notify_auto_reserve_disabled_fn: Callable[[Watch], None] | None = None,
+    notify_auto_reserve_rearmed_fn: Callable[[Watch], None] | None = None,
     event_name: str | None = None,
 ) -> None:
     settings_pre = config.get("settings") or {}
@@ -137,6 +143,12 @@ def run_watches(
         except Exception as e:
             log.exception("[%s] login failed: %s", provider_name, e)
             continue
+        # Settle holds placed on earlier runs before hunting again: a hold that
+        # lapsed unpaid re-arms auto-reserve here, so this poll can re-reserve.
+        _resolve_pending_reservations(
+            provider, watches, state, now_iso,
+            notify_rearmed_fn=notify_auto_reserve_rearmed_fn,
+        )
         for watch in watches:
             try:
                 new_train_total += _process_watch(
@@ -169,6 +181,60 @@ def run_watches(
             notify_summary_fn(active)
         except Exception as e:
             log.exception("summary notify failed: %s", e)
+
+
+def _resolve_pending_reservations(
+    provider: Provider,
+    watches: list[Watch],
+    state: dict[str, Any],
+    now_iso: str,
+    *,
+    notify_rearmed_fn: Callable[[Watch], None] | None = None,
+) -> None:
+    """Decide the fate of holds this provider placed on earlier runs.
+
+    A reservation is only a *hold* until it's paid (~20 min). Previously any
+    successful reserve disabled auto-reserve permanently, so a hold that
+    expired overnight left the watch dead — no further attempts, seat gone.
+
+    Now: paid → keep auto-reserve off (goal achieved, hold cleared).
+         expired unpaid → re-arm auto-reserve so we keep hunting.
+         still within deadline → leave as-is.
+    """
+    pending = [w for w in watches if state_mod.get_pending_reservation(state, w.id)]
+    if not pending:
+        return
+    now_dt = _parse_dt(now_iso)
+    paid: set[str] = set()
+    try:
+        paid = provider.paid_reservation_ids()
+    except Exception as e:  # never let this break the poll
+        log.exception("[%s] paid-reservation lookup failed: %s", provider.name, e)
+        paid = set()
+
+    for watch in pending:
+        rec = state_mod.get_pending_reservation(state, watch.id) or {}
+        rsv_id = str(rec.get("id") or "")
+        if rsv_id and rsv_id in paid:
+            log.info("[%s] watch %s: reservation %s paid — auto-reserve stays off",
+                     provider.name, watch.id, rsv_id)
+            state_mod.clear_pending_reservation(state, watch.id)
+            continue
+        deadline = _parse_dt(rec.get("deadline"))
+        if deadline is None or now_dt is None:
+            continue  # standby / unknown deadline — leave the hold alone
+        if now_dt <= deadline + timedelta(minutes=RE_ARM_GRACE_MIN):
+            continue  # still payable
+        # Hold lapsed unpaid → the seat is back in the pool; hunt again.
+        log.info("[%s] watch %s: hold %s expired unpaid — re-arming auto-reserve",
+                 provider.name, watch.id, rsv_id or "?")
+        state_mod.clear_pending_reservation(state, watch.id)
+        state_mod.enable_auto_reserve(state, watch.id)
+        if notify_rearmed_fn is not None:
+            try:
+                notify_rearmed_fn(watch)
+            except Exception as e:
+                log.exception("re-arm notify failed: %s", e)
 
 
 def _process_watch(
@@ -257,10 +323,15 @@ def _process_watch(
                         schedule_reminders_fn(watch, chosen, reservation)
                     except Exception as e:
                         log.exception("schedule_reminders failed for %s: %s", reservation.reservation_id, e)
-                # One-shot: disable auto-reserve for this watch so we don't
-                # re-reserve on later polls (esp. with renotify on). The user
-                # re-enables from the PWA if they want another.
+                # Pause auto-reserve while this hold is alive so we don't
+                # re-reserve on every later poll. It is *not* permanent: a
+                # later run checks whether the hold got paid — if it expired
+                # unpaid, auto-reserve re-arms automatically (see
+                # _resolve_pending_reservations).
                 state_mod.disable_auto_reserve(state, watch.id)
+                state_mod.set_pending_reservation(
+                    state, watch.id, reservation.reservation_id, reservation.expires_at,
+                )
                 if notify_auto_reserve_disabled_fn is not None:
                     try:
                         notify_auto_reserve_disabled_fn(watch)

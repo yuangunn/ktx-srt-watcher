@@ -118,6 +118,21 @@ class SRTProvider:
             is_standby=is_standby,
         )
 
+    def paid_reservation_ids(self) -> set[str]:
+        """Paid reservations only — SRT exposes a paid_only filter directly."""
+        if self._client is None:
+            return set()
+        ids: set[str] = set()
+        try:
+            for r in self._client.get_reservations(paid_only=True) or []:
+                v = getattr(r, "reservation_number", None)
+                if v:
+                    ids.add(str(v))
+        except Exception:
+            # Lookup unavailable → treat as "unknown", never as "paid".
+            return set()
+        return ids
+
 
 def _is_soldout_error(e: Exception) -> bool:
     msg = str(e)
