@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import notifier
+from . import pushover
 from . import remote
 from . import state as state_mod
 from .adapters.base import Provider
@@ -59,6 +60,9 @@ def main() -> int:
         # watch. Exiting non-zero here would paint every tick red.
         log.info("등록된 워치가 없습니다 — 앱에서 워치를 추가하세요")
         return 0
+    # Only the phone knows whether the user is home; the mode decides whether
+    # an urgent alert may override the mute switch.
+    pushover.set_mode(remote.fetch_mode())
     creds = load_credentials()
     providers: dict[str, Provider] = {
         "korail": KorailProvider(),

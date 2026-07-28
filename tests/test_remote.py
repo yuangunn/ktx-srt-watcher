@@ -154,3 +154,26 @@ class TestUserAgent:
         remote.fetch_config()
         assert seen["ua"] == remote.USER_AGENT
         assert "urllib" not in (seen["ua"] or "").lower()
+
+
+class TestFetchMode:
+    def test_returns_away(self, monkeypatch):
+        _capture(monkeypatch, json.dumps({"mode": "away"}).encode())
+        assert remote.fetch_mode() == "away"
+
+    def test_returns_home(self, monkeypatch):
+        _capture(monkeypatch, json.dumps({"mode": "home"}).encode())
+        assert remote.fetch_mode() == "home"
+
+    def test_unreachable_falls_back_to_home(self, monkeypatch):
+        # Failing quiet would mean sleeping through a 3am cancellation.
+        monkeypatch.setattr(remote.urllib.request, "urlopen", _http_error(500))
+        assert remote.fetch_mode() == "home"
+
+    def test_garbage_body_falls_back_to_home(self, monkeypatch):
+        _capture(monkeypatch, b"not json")
+        assert remote.fetch_mode() == "home"
+
+    def test_unknown_value_falls_back_to_home(self, monkeypatch):
+        _capture(monkeypatch, json.dumps({"mode": "elsewhere"}).encode())
+        assert remote.fetch_mode() == "home"

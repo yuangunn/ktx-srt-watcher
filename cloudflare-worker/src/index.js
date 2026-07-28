@@ -43,6 +43,19 @@ const CORS_PREFLIGHT = {
 // KV keys inside the STATE namespace.
 const STATE_KEY = "current";
 const CONFIG_KEY = "config";
+// "home" | "away" — decides whether an urgent alert is allowed to override
+// the phone's mute switch.  Only the phone knows where the user is, so it
+// pushes the value here (iOS Shortcuts automation, or the PWA toggle).
+const MODE_KEY = "alert_mode";
+const MODE_HOME = "home";
+const MODE_AWAY = "away";
+
+// Default home: a missed 3am cancellation costs a trip, a stray alert in a
+// lecture costs embarrassment.  Fail toward the louder mistake.
+async function readMode(env) {
+  const v = await env.STATE.get(MODE_KEY);
+  return v === MODE_AWAY ? MODE_AWAY : MODE_HOME;
+}
 
 // Two callers, two secrets.  APP_TOKEN lives in the PWA (extractable from the
 // user's own device); REMINDER_TOKEN lives in GHA secrets.  Keeping them
@@ -177,6 +190,33 @@ export default {
       await env.STATE.put(CONFIG_KEY, body);
       return text("stored\n", 202);
     }
+    if (url.pathname === "/mode" && request.method === "GET") {
+      if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      return json({ mode: await readMode(env) });
+    }
+    // Written by the PWA toggle and by an iOS Shortcuts automation on
+    // arriving/leaving home.  Accepts the value in a JSON body or as ?mode=,
+    // because Shortcuts is far easier to set up with a bare query string.
+    if (url.pathname === "/mode" && request.method === "PUT") {
+      if (!authorized(request, env, env.APP_TOKEN)) {
+        return text("unauthorized\n", 401);
+      }
+      let mode = url.searchParams.get("mode");
+      if (!mode) {
+        try {
+          mode = (await request.json()).mode;
+        } catch {
+          return text("mode required\n", 400);
+        }
+      }
+      if (mode !== MODE_HOME && mode !== MODE_AWAY) {
+        return text(`mode must be "${MODE_HOME}" or "${MODE_AWAY}"\n`, 400);
+      }
+      await env.STATE.put(MODE_KEY, mode);
+      return json({ mode });
+    }
     // Read-only view of the backup ring, newest first, for manual recovery.
     if (url.pathname === "/config/backups" && request.method === "GET") {
       if (!authorized(request, env, env.APP_TOKEN)) {
@@ -307,10 +347,13 @@ async function processReminders(env) {
         // payment deadline gets slept through. Pushover can, so the last
         // stretch goes out as an emergency alert that repeats until it is
         // acknowledged in the app.
+        // Away: still alert, but at a priority that respects the mute
+        // switch — a lecture is the wrong place to be rung at full volume.
+        const away = (await readMode(env)) === MODE_AWAY;
         await sendPushover(env, {
           title: r.kind === "final" ? "⛔ 결제 마감 임박" : "🔔 결제 마감 알림",
           message: body,
-          priority: r.kind === "final" ? 2 : 1,
+          priority: r.kind === "final" && !away ? 2 : 1,
         });
         r.sent = true;
         dirty = true;

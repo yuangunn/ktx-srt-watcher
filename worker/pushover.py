@@ -36,6 +36,23 @@ PRIORITY_EMERGENCY = 2
 RETRY_SEC = 60
 EXPIRE_SEC = 900
 
+# Set once per run from the phone-reported location.  Away, an emergency
+# alert is downgraded to high: it still arrives and still bypasses Pushover's
+# quiet hours, but it obeys the phone's mute switch instead of ringing at
+# full volume in the middle of a lecture.
+_mode = "home"
+
+
+def set_mode(mode: str) -> None:
+    global _mode
+    _mode = "away" if mode == "away" else "home"
+
+
+def effective_priority(priority: int) -> int:
+    if _mode == "away" and priority == PRIORITY_EMERGENCY:
+        return PRIORITY_HIGH
+    return priority
+
 
 class _PostSession(Protocol):
     def post(self, url: str, *, data: dict, timeout: int): ...
@@ -57,6 +74,7 @@ def send(
     Telegram message has usually already gone out by the time we're called."""
     if not enabled():
         return
+    priority = effective_priority(priority)
     payload: dict = {
         "token": os.environ["PUSHOVER_TOKEN"],
         "user": os.environ["PUSHOVER_USER"],
