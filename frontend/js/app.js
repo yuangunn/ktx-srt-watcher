@@ -575,6 +575,7 @@ class App {
     this._wireTabs();
     this._wireTheme();
     this._wireHomeMode();
+    this._wireShortcutCopy();
     this._wireFab();
     this._wireSheet();
     this._wireCheckNow();
@@ -648,6 +649,32 @@ class App {
         toggle.disabled = false;
       }
     });
+  }
+  // The Shortcut needs the app token in an Authorization header. Typing a
+  // 64-char token on a phone keyboard is where this setup gets abandoned, so
+  // hand over ready-made strings instead.
+  _wireShortcutCopy() {
+    const base = this._cfWorkerUrl.replace(/\/$/, '');
+    const items = [
+      // Copy the whole header value, not the bare token — it is pasted
+      // straight into the Shortcut's Authorization field.
+      ['#copy-token', () => `Bearer ${this.cf.token}`, 'Authorization 값'],
+      ['#copy-url-home', () => `${base}/mode?mode=home`, '집 URL'],
+      ['#copy-url-away', () => `${base}/mode?mode=away`, '외출 URL'],
+    ];
+    for (const [sel, value, label] of items) {
+      const btn = $(sel);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(value());
+          this._toast(`${label} 복사됨`);
+        } catch {
+          // Clipboard API needs a secure context and can still be refused.
+          this._toast(`복사 실패 — 길게 눌러 직접 복사해 주세요`);
+        }
+      });
+    }
   }
   _wireHealthRefresh() {
     const btn = $('#health-refresh');
