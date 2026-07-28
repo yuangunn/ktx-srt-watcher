@@ -58,6 +58,12 @@ config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌
 - 읽기/쓰기 + atomic write (tmp → rename)
 - `last_run`, `watches[id].last_check`, `watches[id].notified_train_ids` 갱신
 
+### `worker/pushover.py`
+무음/방해금지를 뚫어야 하는 알림 전용. iOS는 Apple의 Critical Alerts 권한이
+있는 앱만 무음 스위치를 무시할 수 있고 텔레그램에는 그 권한이 없다. 좌석 발견,
+임시예약 성공, 결제 마감 임박은 priority=2(확인할 때까지 반복)로 나간다.
+자격증명이 없으면 조용히 no-op.
+
 ### `worker/notifier.py`
 텔레그램 Bot API. 메시지 포맷:
 ```
@@ -80,6 +86,7 @@ SRT는 코레일톡/SRT 앱 딥링크 또는 웹 URL.
 - `TELEGRAM_BOT_TOKEN` (BotFather에서 발급)
 - `TELEGRAM_CHAT_ID` (본인 user id)
 - `CF_WORKER_URL`, `REMINDER_TOKEN` (config/state 저장소 접근)
+- `PUSHOVER_TOKEN`, `PUSHOVER_USER` (선택 — 무음/방해금지 뚫는 긴급 알림)
 - `CLOUDFLARE_API_TOKEN` (worker 자동 배포)
 
 CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
