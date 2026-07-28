@@ -72,6 +72,18 @@ class TestFetchConfig:
         with pytest.raises(remote.RemoteError, match="401"):
             remote.fetch_config()
 
+    def test_missing_config_returns_none_not_an_error(self, monkeypatch):
+        # No watches added yet is a normal state; raising here painted every
+        # 5-minute tick red.
+        monkeypatch.setattr(remote.urllib.request, "urlopen", _http_error(404))
+        assert remote.fetch_config() is None
+
+    def test_server_error_still_raises(self, monkeypatch):
+        # 5xx means we cannot tell whether there is anything to poll.
+        monkeypatch.setattr(remote.urllib.request, "urlopen", _http_error(503))
+        with pytest.raises(remote.RemoteError):
+            remote.fetch_config()
+
     def test_raises_on_malformed_json(self, monkeypatch):
         _capture(monkeypatch, b"not json{{")
         with pytest.raises(remote.RemoteError, match="valid JSON"):

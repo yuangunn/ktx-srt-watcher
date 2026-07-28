@@ -51,10 +51,14 @@ def main() -> int:
         cfg = load_config()
         s = remote.fetch_state()
     except remote.RemoteError as e:
-        # No config means nothing to poll. Fail the job loudly rather than
-        # log a run that silently checked nothing.
+        # We cannot tell whether there is anything to poll — fail loudly.
         log.error("설정을 불러오지 못했습니다: %s", e)
         return 1
+    if cfg is None:
+        # Nothing stored yet. Not a failure: the user simply hasn't added a
+        # watch. Exiting non-zero here would paint every tick red.
+        log.info("등록된 워치가 없습니다 — 앱에서 워치를 추가하세요")
+        return 0
     creds = load_credentials()
     providers: dict[str, Provider] = {
         "korail": KorailProvider(),
