@@ -61,10 +61,21 @@ def _request(path: str, *, method: str = "GET", body: bytes | None = None) -> by
         raise RemoteError(f"{method} {path} → {e}") from e
 
 
-def fetch_config() -> dict[str, Any]:
-    """Load the watch list.  Raises RemoteError — without config there is
-    nothing to poll, so callers should fail loudly rather than run empty."""
-    raw = _request("/config")
+def fetch_config() -> dict[str, Any] | None:
+    """Load the watch list.
+
+    Returns None when nothing is stored yet (404) — a fresh install with no
+    watches is a normal state, not a failure, and treating it as one turns
+    every 5-minute tick into a red run.  Any other problem (CF down, bad
+    token, malformed body) still raises: those mean we *cannot tell* whether
+    there is anything to poll, which is worth failing over.
+    """
+    try:
+        raw = _request("/config")
+    except RemoteError as e:
+        if "HTTP 404" in str(e):
+            return None
+        raise
     try:
         return json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as e:

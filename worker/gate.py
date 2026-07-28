@@ -27,7 +27,7 @@ def main() -> int:
     event_name = os.environ.get("GITHUB_EVENT_NAME")
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        config = remote.fetch_config()
+        config = remote.fetch_config() or {}
         state = remote.fetch_state()
         poll = will_poll(config, state, event_name, now_iso)
     except Exception as e:  # fail open — never skip a real poll on a bug
