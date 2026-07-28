@@ -540,9 +540,13 @@ function ghHeaders(env) {
   };
 }
 
+// CORS goes on *every* response, including 401/404. Without it the browser
+// discards the response before the PWA can read the status, so "no config
+// stored yet" and "wrong token" both surface as an opaque network error —
+// which is exactly how a correct app token got reported as invalid.
 function text(body, status = 200, extraHeaders) {
   return new Response(body, {
     status,
-    headers: { "Content-Type": "text/plain; charset=utf-8", ...extraHeaders },
+    headers: { "Content-Type": "text/plain; charset=utf-8", ...CORS, ...extraHeaders },
   });
 }
