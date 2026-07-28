@@ -11,6 +11,12 @@ on:
     # alongside the CF-driven runs.
     - cron: '0 */6 * * *'
   workflow_dispatch:                   # PWA "지금 확인" / 수동 실행
+    inputs:
+      test_notify:
+        description: '알림 경로 테스트 (조회/예약 없이 알림만 발송)'
+        type: choice
+        options: ['off', 'all', 'telegram', 'pushover']
+        default: 'off'
   repository_dispatch:
     types: [cron-tick]                 # CF Worker 정확한 cron
 
@@ -58,8 +64,24 @@ jobs:
         if: steps.gate.outputs.poll == 'true'
         run: pip install -r requirements.txt
 
+      # Fires the real seat-found alert with a fabricated train. The path that
+      # matters only runs when a cancellation appears — which is exactly when
+      # you cannot afford to find out it is broken.
+      - name: Test notification
+        if: github.event_name == 'workflow_dispatch' && inputs.test_notify != 'off'
+        env:
+          TZ: Asia/Seoul
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
+        run: python -m worker.main --test-notify=${{ inputs.test_notify }}
+
       - name: Run watcher
-        if: steps.gate.outputs.poll == 'true'
+        # A test run must not also poll: it exists to isolate the alert path.
+        if: steps.gate.outputs.poll == 'true' && (github.event_name != 'workflow_dispatch' || inputs.test_notify == 'off')
         env:
           TZ: Asia/Seoul
           KORAIL_ID: ${{ secrets.KORAIL_ID }}

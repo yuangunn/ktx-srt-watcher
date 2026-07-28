@@ -377,6 +377,71 @@ def load_config() -> dict[str, Any]:
     return remote.fetch_config()
 
 
+def send_test_notification(channel: str = "all") -> int:
+    """Fire the real alert path with a synthetic find.
+
+    The seat-found path is the one that matters and the hardest to exercise:
+    it only runs when a cancellation actually appears, which is precisely when
+    you cannot afford to discover it is broken.  This builds the same message
+    through the same formatter, so the phone shows exactly what a genuine find
+    will — and, for pushover, sounds like it too.
+
+    channel: "telegram" | "pushover" | "all".  Testing them separately matters
+    because they fail for entirely different reasons (bot token vs. Critical
+    Alerts permission), and a combined test hides which one broke.
+
+    Nothing is searched and nothing is reserved.
+    """
+    pushover.set_mode(remote.fetch_mode())
+    watch = Watch(
+        id="test-notification",
+        provider="korail",
+        **{"from": "서울"},
+        to="부산",
+        date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        time_min="00:00",
+        time_max="23:59",
+        train_types=["KTX"],
+    )
+    train = Train(
+        provider="korail",
+        train_no="000",
+        train_type="KTX",
+        dep_station="서울",
+        arr_station="부산",
+        date=watch.date,
+        dep_time="09:35",
+        arr_time="12:14",
+        seats_general=1,
+        seats_special=0,
+        raw_id="test-notification",
+        booking_url="https://www.letskorail.com",
+        seat_class="general",
+    )
+    body = "🧪 테스트 알림 (실제 좌석 아님)\n\n" + notifier.format_message(watch, [train])
+
+    if channel in ("telegram", "all"):
+        notifier.send_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], body,
+        )
+        log.info("텔레그램 테스트 알림 발송 완료")
+
+    if channel in ("pushover", "all"):
+        if not pushover.enabled():
+            log.error(
+                "PUSHOVER_TOKEN / PUSHOVER_USER 가 설정되지 않아 발송하지 않았습니다"
+            )
+            return 1
+        pushover.send(
+            "🧪 테스트 — 좌석 발견 알림",
+            body,
+            priority=pushover.PRIORITY_EMERGENCY,
+        )
+        log.info("pushover 테스트 알림 발송 완료 (mode=%s)", pushover._mode)
+
+    return 0
+
+
 def load_credentials() -> dict[str, tuple[str, str]]:
     return {
         "korail": (os.environ.get("KORAIL_ID", ""), os.environ.get("KORAIL_PW", "")),
@@ -385,4 +450,8 @@ def load_credentials() -> dict[str, tuple[str, str]]:
 
 
 if __name__ == "__main__":
+    _test = next((a for a in sys.argv if a.startswith("--test-notify")), None)
+    if _test is not None:
+        _channel = _test.split("=", 1)[1] if "=" in _test else "all"
+        sys.exit(send_test_notification(_channel))
     sys.exit(main())
