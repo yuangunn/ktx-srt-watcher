@@ -17,6 +17,11 @@ from typing import Any
 
 TIMEOUT_SEC = 10
 
+# Cloudflare's bot protection answers 403 to the default "Python-urllib/x.y"
+# User-Agent before the request ever reaches the Worker, so send our own.
+# (This silently broke the old state mirror push for weeks.)
+USER_AGENT = "ktx-srt-watcher"
+
 
 class RemoteError(RuntimeError):
     """Config/state could not be reached or was unusable."""
@@ -44,6 +49,7 @@ def _request(path: str, *, method: str = "GET", body: bytes | None = None) -> by
         headers={
             "Authorization": f"Bearer {_token()}",
             "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": USER_AGENT,
         },
     )
     try:

@@ -264,6 +264,7 @@ def push_to_kv_mirror(state_path: Path | str) -> None:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json; charset=utf-8",
+                "User-Agent": "ktx-srt-watcher",
             },
         )
         with urllib.request.urlopen(req, timeout=10) as resp:

@@ -126,3 +126,19 @@ class TestPushState:
         monkeypatch.setattr(remote.urllib.request, "urlopen", _http_error(401))
         with pytest.raises(remote.RemoteError):
             remote.push_state({})
+
+
+class TestUserAgent:
+    def test_sends_explicit_user_agent(self, monkeypatch):
+        # Cloudflare bot protection 403s the default "Python-urllib/x.y" before
+        # the request reaches the Worker, which silently killed every call.
+        seen = {}
+
+        def fake_urlopen(req, timeout=None):
+            seen["ua"] = req.headers.get("User-agent")
+            return _Resp(b"{}")
+
+        monkeypatch.setattr(remote.urllib.request, "urlopen", fake_urlopen)
+        remote.fetch_config()
+        assert seen["ua"] == remote.USER_AGENT
+        assert "urllib" not in (seen["ua"] or "").lower()
