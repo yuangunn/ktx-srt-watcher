@@ -301,7 +301,17 @@ async function processReminders(env) {
     for (const r of record.reminders) {
       if (r.sent || r.trigger_at_ms > now) continue;
       try {
-        await sendTelegram(env, formatReminder(record, r));
+        const body = formatReminder(record, r);
+        await sendTelegram(env, body);
+        // Telegram cannot override the iOS mute switch, which is how a
+        // payment deadline gets slept through. Pushover can, so the last
+        // stretch goes out as an emergency alert that repeats until it is
+        // acknowledged in the app.
+        await sendPushover(env, {
+          title: r.kind === "final" ? "⛔ 결제 마감 임박" : "🔔 결제 마감 알림",
+          message: body,
+          priority: r.kind === "final" ? 2 : 1,
+        });
         r.sent = true;
         dirty = true;
       } catch (e) {
@@ -332,6 +342,39 @@ function formatReminder(rec, reminder) {
     "",
     `${app}에서 결제하세요.`,
   ].join("\n");
+}
+
+// Pushover is the channel that can actually wake the user: iOS only lets an
+// app bypass the mute switch and Do Not Disturb with Apple's Critical Alerts
+// entitlement, which Telegram does not have.  Silent no-op when unconfigured,
+// and never throws — Telegram has already delivered by the time we get here,
+// so a Pushover outage must not mark the reminder unsent and re-fire it.
+const PUSHOVER_RETRY_SEC = 60;
+const PUSHOVER_EXPIRE_SEC = 900;
+
+async function sendPushover(env, { title, message, priority = 1 }) {
+  if (!env.PUSHOVER_TOKEN || !env.PUSHOVER_USER) return;
+  const form = new URLSearchParams({
+    token: env.PUSHOVER_TOKEN,
+    user: env.PUSHOVER_USER,
+    title,
+    message,
+    priority: String(priority),
+  });
+  if (priority === 2) {
+    form.set("retry", String(PUSHOVER_RETRY_SEC));
+    form.set("expire", String(PUSHOVER_EXPIRE_SEC));
+  }
+  try {
+    const res = await fetch("https://api.pushover.net/1/messages.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form,
+    });
+    if (!res.ok) console.error(`pushover ${res.status}: ${await res.text()}`);
+  } catch (e) {
+    console.error(`pushover failed: ${e.message}`);
+  }
 }
 
 async function sendTelegram(env, body) {

@@ -5,6 +5,7 @@ from typing import Protocol
 
 import requests
 
+from . import pushover
 from .models import Reservation, Train, Watch
 
 
@@ -75,6 +76,13 @@ def notify(
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_message(watch, trains)
     send_telegram(bot_token, chat_id, text, session=session, silent=silent)
+    # A cancelled seat at 3am is exactly the alert that gets slept through, so
+    # this one is emergency priority: it repeats until acknowledged.
+    pushover.send(
+        f"🚄 {watch.from_}→{watch.to} {watch.date}",
+        text,
+        priority=pushover.PRIORITY_EMERGENCY,
+    )
 
 
 def format_summary(watches: list[Watch]) -> str:
@@ -148,6 +156,8 @@ def notify_reservation_success(
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_reservation_success(watch, train, reservation)
     send_telegram(bot_token, chat_id, text, session=session)
+    # The hold lapses in ~20 minutes unless the user pays, so this must land.
+    pushover.send("✅ 임시예약 성공 — 결제 필요", text, priority=pushover.PRIORITY_EMERGENCY)
 
 
 def notify_reservation_failure(
@@ -158,6 +168,9 @@ def notify_reservation_failure(
     chat_id = _require_env("TELEGRAM_CHAT_ID")
     text = format_reservation_failure(watch, train, error_msg)
     send_telegram(bot_token, chat_id, text, session=session)
+    # Not time-critical — high priority so it still bypasses quiet hours, but
+    # no repeat-until-acknowledged.
+    pushover.send("❌ 임시예약 실패", text, priority=pushover.PRIORITY_HIGH)
 
 
 def format_auto_reserve_disabled(watch: Watch) -> str:

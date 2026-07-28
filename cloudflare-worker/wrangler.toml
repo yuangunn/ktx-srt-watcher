@@ -50,6 +50,9 @@ EVENT_TYPE = "cron-tick"
 #   TELEGRAM_CHAT_ID    User's Telegram chat id
 #   REMINDER_TOKEN      Shared secret for the GHA watcher → CF calls
 #                       (/reminder/schedule, /config GET, /state GET+PUT)
+#   PUSHOVER_TOKEN      Pushover application token (optional). Without it
+#   PUSHOVER_USER       Pushover user key (optional).  reminders are
+#                       Telegram-only, which cannot override iOS silent mode.
 #   APP_TOKEN           Shared secret for the PWA → CF calls
 #                       (/config GET+PUT, /state GET). Separate from
 #                       REMINDER_TOKEN: it lives in the browser, so a leak

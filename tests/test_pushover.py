@@ -1,0 +1,101 @@
+"""Tests for worker.pushover — the channel that can bypass iOS silent mode."""
+from __future__ import annotations
+
+import pytest
+
+from worker import pushover
+
+
+class _Resp:
+    def __init__(self, ok: bool = True):
+        self._ok = ok
+
+    def raise_for_status(self):
+        if not self._ok:
+            raise RuntimeError("boom")
+
+
+class _Session:
+    def __init__(self, ok: bool = True):
+        self.calls: list[dict] = []
+        self._ok = ok
+
+    def post(self, url, *, data, timeout):
+        self.calls.append({"url": url, "data": data, "timeout": timeout})
+        return _Resp(self._ok)
+
+
+@pytest.fixture
+def _creds(monkeypatch):
+    monkeypatch.setenv("PUSHOVER_TOKEN", "app-token")
+    monkeypatch.setenv("PUSHOVER_USER", "user-key")
+
+
+class TestEnabled:
+    def test_false_without_credentials(self, monkeypatch):
+        monkeypatch.delenv("PUSHOVER_TOKEN", raising=False)
+        monkeypatch.delenv("PUSHOVER_USER", raising=False)
+        assert pushover.enabled() is False
+
+    def test_false_with_only_one_of_the_pair(self, monkeypatch):
+        monkeypatch.setenv("PUSHOVER_TOKEN", "t")
+        monkeypatch.delenv("PUSHOVER_USER", raising=False)
+        assert pushover.enabled() is False
+
+    def test_true_with_both(self, _creds):
+        assert pushover.enabled() is True
+
+
+class TestSend:
+    def test_no_op_when_unconfigured(self, monkeypatch):
+        monkeypatch.delenv("PUSHOVER_TOKEN", raising=False)
+        monkeypatch.delenv("PUSHOVER_USER", raising=False)
+        sess = _Session()
+        pushover.send("t", "m", session=sess)
+        assert sess.calls == []
+
+    def test_posts_credentials_and_body(self, _creds):
+        sess = _Session()
+        pushover.send("제목", "본문", session=sess)
+        data = sess.calls[0]["data"]
+        assert data["token"] == "app-token"
+        assert data["user"] == "user-key"
+        assert data["title"] == "제목"
+        assert data["message"] == "본문"
+
+    def test_high_priority_sends_no_retry_fields(self, _creds):
+        # retry/expire are only meaningful (and only accepted) at priority 2.
+        sess = _Session()
+        pushover.send("t", "m", priority=pushover.PRIORITY_HIGH, session=sess)
+        data = sess.calls[0]["data"]
+        assert data["priority"] == 1
+        assert "retry" not in data
+        assert "expire" not in data
+
+    def test_emergency_priority_repeats_until_acknowledged(self, _creds):
+        sess = _Session()
+        pushover.send("t", "m", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        data = sess.calls[0]["data"]
+        assert data["priority"] == 2
+        assert data["retry"] == pushover.RETRY_SEC
+        assert data["expire"] == pushover.EXPIRE_SEC
+
+    def test_expire_stays_inside_the_payment_window(self):
+        # A hold lasts ~20 min. An alert still ringing after the seat is gone
+        # only teaches the user to ignore it.
+        assert pushover.EXPIRE_SEC < 20 * 60
+
+    def test_retry_meets_pushover_minimum(self):
+        assert pushover.RETRY_SEC >= 60
+
+    def test_failure_never_raises(self, _creds):
+        # Telegram has already delivered by this point; a Pushover outage must
+        # not take down the run.
+        pushover.send("t", "m", session=_Session(ok=False))
+
+    def test_optional_url_included_only_when_given(self, _creds):
+        sess = _Session()
+        pushover.send("t", "m", session=sess)
+        assert "url" not in sess.calls[0]["data"]
+        pushover.send("t", "m", url="https://example.com", session=sess)
+        assert sess.calls[1]["data"]["url"] == "https://example.com"
