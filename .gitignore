@@ -9,3 +9,8 @@ dist/
 *.egg-info/
 .claude/launch.json
 
+
+# Watch list and poll state live in the CF Worker's KV, never in git — the
+# watch ids embed routes and travel dates and this repo is public.
+config.json
+state.json

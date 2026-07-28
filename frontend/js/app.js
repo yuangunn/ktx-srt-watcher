@@ -1234,7 +1234,7 @@ class App {
     $('#last-run').textContent = '실행 중…';
     try {
       await this.gh.dispatchWorkflow('watch.yml');
-      // workflow takes ~30–50s — poll state.json for last_run advancement
+      // workflow takes ~30–50s — poll CF state for last_run advancement
       let detected = false;
       for (let i = 0; i < 14 && !detected; i++) {
         await new Promise(r => setTimeout(r, 5000));

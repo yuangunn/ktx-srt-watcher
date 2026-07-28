@@ -64,8 +64,8 @@ def record_poll(state: dict[str, Any], when: str, seats_found: int) -> None:
 def is_auto_reserve_disabled(state: dict[str, Any], watch_id: str) -> bool:
     """True if auto-reserve was self-disabled for this watch after a success.
 
-    The worker can't persist config.json (only state.json is committed), so a
-    one-shot auto-reserve is remembered here instead. The PWA still shows the
+    The worker never writes config (the PWA owns it), so a one-shot
+    auto-reserve is remembered in state instead. The PWA still shows the
     config's auto_reserve flag; the user re-enables from the app when they want
     another reservation.
     """

@@ -31,38 +31,46 @@ PWA([Cloudflare Pages](https://pages.cloudflare.com))로 워치 추가/수정/�
        │  PWA (CF Pages)     │ 사용자가 워치 추가/수정/삭제,
        │  ktx-srt-watcher    │ 설정 변경, "지금 확인" 버튼,
        │  .pages.dev         │ 통계 / 최근 실행 로그 보기
-       └──────────┬──────────┘
-                  │ GitHub Contents API
-                  │ (PAT 기반)
-                  ▼
-       ┌─────────────────────┐    ┌─────────────────────┐
-       │  GitHub Repo        │◄───│  CF Worker          │
-       │  (private)          │    │  (cloudflare-worker)│
-       │  - config.json      │    │                     │
-       │  - state.json       │    │  Cron */5:         │
-       │  - .github/...      │    │   → repository_     │
-       │  - worker/...       │    │     dispatch ──┐    │
-       └──────────┬──────────┘                     │    │
-                  ▼                                │    │
-       ┌─────────────────────┐                     │    │
-       │  GitHub Actions     │◄────────────────────┘    │
-       │  ticket-watch.yml   │                          │
-       │                     │   POST /reminder/        │
-       │   python -m         │   schedule ◄─────────────┤
-       │     worker.main     │                          │
-       │                     │   Cron */1:              │
-       │   - korail2 / SRT   │    → process REMINDERS   │
-       │   - Telegram alert  │      KV → Telegram       │
-       │   - state.json      │                          │
-       │     commit          │   Cron */6h: heartbeat   │
-       └──────────┬──────────┘   Cron daily: PAT check  │
-                  │                                     │
-                  │              Cron weekly:           │
-                  ▼              digest                 │
-       ┌─────────────────────┐                          │
-       │  텔레그램 봇 알림   │◄─────────────────────────┘
+       └────┬───────────┬────┘
+            │           │ APP_TOKEN
+            │           │ (워치 목록 / 폴링 상태)
+            │           └──────────────┐
+            │ GitHub PAT               ▼
+            │ (Actions 전용)  ┌─────────────────────┐
+            │                 │  CF Worker + KV     │
+            │                 │  (cloudflare-worker)│
+            ▼                 │                     │
+       ┌─────────────────────┐│  KV:                │
+       │  GitHub Repo        ││   - config (워치)   │
+       │  (public, 코드만)   ││   - state (폴링기록)│
+       │  - .github/...      ││                     │
+       │  - worker/...       ││  Cron */5:          │
+       │  - frontend/...     ││   → repository_     │
+       │  - cloudflare-      ││     dispatch ──┐    │
+       │      worker/...     ││                │    │
+       └──────────┬──────────┘└────────────────┼────┘
+                  ▼                            │
+       ┌─────────────────────┐                 │
+       │  GitHub Actions     │◄────────────────┘
+       │  ticket-watch.yml   │
+       │                     │   GET /config           ┐
+       │   python -m         │   PUT /state            │
+       │     worker.main     │   POST /reminder/       │ REMINDER_
+       │                     │        schedule         │  TOKEN
+       │   - korail2 / SRT   │  ───────────────────────┘
+       │   - Telegram alert  │
+       └──────────┬──────────┘   CF Worker 나머지 cron:
+                  │                */1  리마인더 발송
+                  │                */6h 하트비트
+                  ▼                daily PAT 만료 확인
+       ┌─────────────────────┐     weekly 주간 요약
+       │  텔레그램 봇 알림   │◄──────────────────────
        └─────────────────────┘
 ```
+
+**워치 목록과 폴링 기록은 저장소에 없습니다.** 워치 ID가 노선과 날짜를 그대로
+담고 있어서(`서울-대전-20260101-a1b2`) 공개 저장소에 커밋하면 언제 집이 비는지가
+공개됩니다. 둘 다 CF Worker의 KV에 있고 토큰 없이는 읽히지 않습니다.
 
 ---
 
@@ -183,7 +191,7 @@ PWA 첫 화면에서 PAT 입력:
 PWA `+ 워치 추가` 버튼:
 - 제공자, 출발/도착, 날짜, 시간 범위, 열차 종류, 인원, 좌석 등급, 자동 예약 토글
 
-저장하면 GitHub의 `config.json`에 commit, 다음 cron tick에 폴링 시작.
+저장하면 CF Worker의 KV에 저장되고, 다음 cron tick에 폴링 시작.
 
 ---
 
@@ -218,9 +226,9 @@ PWA `+ 워치 추가` 버튼:
 |---|---|
 | 폴링이 설정한 간격보다 늦거나 불규칙함 | 실제 폴링은 CF Worker `*/5 repository_dispatch` 트리거 위에서 워커 throttle로 동작. 랜덤 모드는 의도적으로 불규칙. CF Worker 정상 배포 여부는 `npx wrangler tail`로 확인 |
 | 텔레그램 알림이 안 옴 | 1) `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` GitHub secret 확인. 2) 봇 채팅창에 `/start` 한 번 보냈는지. 3) PWA의 "조용한 시간"이 지금 시간대를 포함하는지 |
-| 자동 예약 직후 "동일한 예약" 에러 | state.json commit이 다음 run보다 늦게 propagate된 case. 어댑터가 `WRR800029` / "동일한 예약" 메시지를 detect하면 silent dedupe — 정상 동작 |
+| 자동 예약 직후 "동일한 예약" 에러 | state 기록이 다음 run보다 늦게 반영된 case. 어댑터가 `WRR800029` / "동일한 예약" 메시지를 detect하면 silent dedupe — 정상 동작 |
 | `결제 마감 12:06`처럼 시간이 이상함 | 이전 버그. 지금은 코레일/SRT 응답의 실제 deadline + KST 변환을 사용. 신규 임시예약부터 정상 |
-| Run watcher 로그가 비어 보임 | poll 간격 throttle로 skip된 run (랜덤 모드는 `state.json`의 `next_poll_at` 전까지 skip). 모달 상단에 안내 배너 표시. 실제 조회 결과는 직전 실제 실행 클릭해서 확인 |
+| Run watcher 로그가 비어 보임 | poll 간격 throttle로 skip된 run (랜덤 모드는 state의 `next_poll_at` 전까지 skip). 모달 상단에 안내 배너 표시. 실제 조회 결과는 직전 실제 실행 클릭해서 확인 |
 | PAT 만료 임박 알림이 옴 | CF Worker의 daily PAT check 동작 중. 안내된 절차로 토큰 regenerate + `npx wrangler secret put GITHUB_TOKEN` 갱신 |
 | 워커가 6시간 침묵 알림 | Heartbeat 동작. CF Worker 또는 GHA Actions, PAT 점검 필요 |
 
@@ -246,7 +254,8 @@ ktx-srt-watcher/
 │   ├── matcher.py
 │   ├── notifier.py
 │   ├── models.py
-│   └── state.py                  # state.json 읽기/쓰기 + semantic merge
+│   ├── remote.py                 # CF KV의 config/state 읽기/쓰기
+│   └── state.py                  # state 딕셔너리 조작
 ├── tests/                        # pytest, 150+
 ├── frontend/                     # PWA
 │   ├── index.html
@@ -262,8 +271,6 @@ ktx-srt-watcher/
 │   └── package.json
 ├── .github/workflows/
 │   └── watch.yml                 # GHA cron + dispatch handler
-├── config.json                   # 사용자가 PWA로 편집
-├── state.json                    # 워커가 자동 갱신
 └── requirements.txt
 ```
 
