@@ -449,6 +449,12 @@ function formatReminder(rec, reminder) {
 // so a Pushover outage must not mark the reminder unsent and re-fire it.
 const PUSHOVER_RETRY_SEC = 60;
 const PUSHOVER_EXPIRE_SEC = 900;
+// Whoever the phone wakes may have no idea what Pushover is — a partner, a
+// parent — and without this the only way to stop the ringing is to find
+// someone who does. The button is English in the app, so quote it verbatim.
+const PUSHOVER_STOP_HINT =
+  "\n\n🔁 이 알림은 확인할 때까지 반복됩니다.\n" +
+  "멈추려면 Pushover 앱을 열고 [Acknowledge] 버튼을 누르세요.";
 
 async function sendPushover(env, { title, message, priority = 1 }) {
   if (!env.PUSHOVER_TOKEN || !env.PUSHOVER_USER) return;
@@ -456,7 +462,8 @@ async function sendPushover(env, { title, message, priority = 1 }) {
     token: env.PUSHOVER_TOKEN,
     user: env.PUSHOVER_USER,
     title,
-    message,
+    // Only the repeating priority needs the hint.
+    message: priority === 2 ? message + PUSHOVER_STOP_HINT : message,
     priority: String(priority),
   });
   if (priority === 2) {

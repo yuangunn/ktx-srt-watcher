@@ -88,6 +88,33 @@ function loadCreds() {
   }
 }
 function saveCreds(creds) { localStorage.setItem(STORAGE_KEY, JSON.stringify(creds)); }
+
+// Recently used stations and routes, per device. Finding a station in an
+// 80-entry dropdown is the slowest part of adding a watch, and the same two
+// or three routes come up again and again — so surface those first.
+const RECENT_KEY = 'balgwon:recent';
+const RECENT_STATIONS_MAX = 8;
+const RECENT_ROUTES_MAX = 5;
+
+function loadRecent() {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '{}');
+    return { stations: v.stations || {}, routes: Array.isArray(v.routes) ? v.routes : [] };
+  } catch {
+    return { stations: {}, routes: [] };
+  }
+}
+function rememberRoute(provider, from, to) {
+  if (!from || !to) return;
+  const r = loadRecent();
+  const list = (r.stations[provider] || []).filter(s => s !== from && s !== to);
+  r.stations[provider] = [from, to, ...list].slice(0, RECENT_STATIONS_MAX);
+  r.routes = [
+    { provider, from, to },
+    ...r.routes.filter(x => !(x.provider === provider && x.from === from && x.to === to)),
+  ].slice(0, RECENT_ROUTES_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(r)); } catch { /* quota — not worth failing a save */ }
+}
 function clearCreds() { localStorage.removeItem(STORAGE_KEY); }
 
 // ----- cloudflare worker store ----------------------------------------------
@@ -306,15 +333,73 @@ function formToWatch(fd, formEl) {
   };
 }
 
-function fillStationDropdowns(provider, fromSelect, toSelect) {
-  const sorted = RAIL_DATA[provider].stations.slice().sort((a, b) => a.localeCompare(b, 'ko'));
-  const opts = (placeholder) => {
-    const lines = [`<option value="" disabled selected>${placeholder}</option>`];
-    sorted.forEach(s => lines.push(`<option value="${s}">${s}</option>`));
-    return lines.join('');
+// Station picker. Replaces two 80-option dropdowns with a searchable sheet
+// that leads with recent routes (one tap fills both ends) and recent stations.
+function stationPicker() {
+  const sheet = $('#station-sheet');
+  const list = $('#station-list');
+  const search = $('#station-search');
+  const title = $('#station-title');
+  let onPick = null;
+  let ctx = { provider: 'korail', which: 'from', other: '' };
+
+  const row = (label, sub, value, kind) =>
+    `<button class="station-row" type="button" data-value="${value}"${kind ? ` data-kind="${kind}"` : ''}>
+       <span class="station-row__name">${label}</span>
+       ${sub ? `<span class="station-row__sub">${sub}</span>` : ''}
+     </button>`;
+
+  const render = () => {
+    const q = search.value.trim();
+    const all = RAIL_DATA[ctx.provider].stations
+      .slice()
+      .sort((a, b) => a.localeCompare(b, 'ko'));
+    const recent = loadRecent();
+    const html = [];
+
+    if (!q) {
+      const routes = recent.routes.filter(r => r.provider === ctx.provider);
+      if (routes.length) {
+        html.push('<div class="station-group">최근 경로</div>');
+        routes.forEach(r => html.push(
+          row(`${r.from} → ${r.to}`, '둘 다 채우기', `${r.from}|${r.to}`, 'route')));
+      }
+      const stations = (recent.stations[ctx.provider] || []).filter(s => all.includes(s));
+      if (stations.length) {
+        html.push('<div class="station-group">최근 역</div>');
+        stations.forEach(s => html.push(row(s, s === ctx.other ? '반대편에 선택됨' : '', s)));
+      }
+    }
+
+    const matches = q ? all.filter(s => s.includes(q)) : all;
+    html.push(`<div class="station-group">${q ? `검색 결과 ${matches.length}개` : '전체'}</div>`);
+    if (!matches.length) html.push('<div class="station-empty">일치하는 역이 없습니다</div>');
+    matches.forEach(s => html.push(row(s, s === ctx.other ? '반대편에 선택됨' : '', s)));
+    list.innerHTML = html.join('');
   };
-  fromSelect.innerHTML = opts('출발역 선택');
-  toSelect.innerHTML = opts('도착역 선택');
+
+  search.addEventListener('input', render);
+  $('#station-close').addEventListener('click', () => sheet.close());
+  sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); });
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('.station-row');
+    if (!btn) return;
+    sheet.close();
+    if (onPick) onPick(btn.dataset.value, btn.dataset.kind === 'route');
+  });
+
+  return {
+    open(provider, which, other, cb) {
+      ctx = { provider, which, other: other || '' };
+      onPick = cb;
+      title.textContent = which === 'from' ? '출발역' : '도착역';
+      search.value = '';
+      render();
+      sheet.showModal();
+      // Don't autofocus: on iOS that yanks the keyboard up over the recents,
+      // which are the whole point of opening this.
+    },
+  };
 }
 
 function fillTrainTypeChips(provider, group) {
@@ -1386,17 +1471,51 @@ class App {
   _wireSheet() {
     const sheet = $('#sheet');
     const form = $('#watch-form');
-    const fromSel = form.querySelector('select[name="from"]');
-    const toSel = form.querySelector('select[name="to"]');
     const trainGroup = $('#train-type-group');
+    this._picker = this._picker || stationPicker();
 
-    const refresh = (provider) => {
-      fillStationDropdowns(provider, fromSel, toSel);
-      fillTrainTypeChips(provider, trainGroup);
+    const setStation = (which, value) => {
+      const input = form.querySelector(`input[name="${which}"]`);
+      const btn = $(which === 'from' ? '#from-btn' : '#to-btn');
+      input.value = value || '';
+      btn.textContent = value || (which === 'from' ? '출발역' : '도착역');
+      btn.dataset.empty = value ? '0' : '1';
     };
+    this._setStation = setStation;
+
+    const currentProvider = () =>
+      form.querySelector('input[name="provider"]:checked')?.value || 'korail';
+
+    for (const which of ['from', 'to']) {
+      $(which === 'from' ? '#from-btn' : '#to-btn').addEventListener('click', () => {
+        const other = form.querySelector(
+          `input[name="${which === 'from' ? 'to' : 'from'}"]`).value;
+        this._picker.open(currentProvider(), which, other, (value, isRoute) => {
+          if (isRoute) {
+            const [f, to] = value.split('|');
+            setStation('from', f);
+            setStation('to', to);
+          } else {
+            setStation(which, value);
+          }
+        });
+      });
+    }
+
+    $('#swap-stations').addEventListener('click', () => {
+      const f = form.querySelector('input[name="from"]').value;
+      const to = form.querySelector('input[name="to"]').value;
+      setStation('from', to);
+      setStation('to', f);
+    });
 
     form.querySelectorAll('input[name="provider"]').forEach(input => {
-      input.addEventListener('change', e => refresh(e.target.value));
+      input.addEventListener('change', e => {
+        // Station lists differ per provider, so a switch invalidates both ends.
+        setStation('from', '');
+        setStation('to', '');
+        fillTrainTypeChips(e.target.value, trainGroup);
+      });
     });
 
     $('#sheet-close').addEventListener('click', () => sheet.close());
@@ -1417,6 +1536,7 @@ class App {
         $('#sheet-error').hidden = true;
         const editingId = this._editingWatchId;
         sheet.close();
+        rememberRoute(watch.provider, watch.from, watch.to);
         if (editingId) {
           await this._update(editingId, watch);
         } else {
@@ -1429,7 +1549,7 @@ class App {
       }
     });
 
-    refresh('korail');
+    fillTrainTypeChips('korail', trainGroup);
   }
   _openSheet(watchId = null) {
     const sheet = $('#sheet');
@@ -1439,11 +1559,10 @@ class App {
     const editing = watchId ? this.config.watches.find(w => w.id === watchId) : null;
     const provider = editing?.provider || 'korail';
     form.querySelector(`input[name="provider"][value="${provider}"]`).checked = true;
-    fillStationDropdowns(provider, form.querySelector('select[name="from"]'), form.querySelector('select[name="to"]'));
     fillTrainTypeChips(provider, $('#train-type-group'));
+    this._setStation('from', editing?.from || '');
+    this._setStation('to', editing?.to || '');
     if (editing) {
-      form.querySelector('select[name="from"]').value = editing.from;
-      form.querySelector('select[name="to"]').value = editing.to;
       form.querySelector('input[name="date"]').value = editing.date;
       form.querySelector('input[name="time_min"]').value = editing.time_min;
       form.querySelector('input[name="time_max"]').value = editing.time_max;

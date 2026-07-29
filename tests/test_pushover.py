@@ -136,3 +136,55 @@ class TestAlertMode:
         assert data["priority"] == pushover.PRIORITY_HIGH
         assert "retry" not in data
         assert "expire" not in data
+
+
+class TestTestAlertExpiry:
+    """A test alert must prove it cuts through silence without then hounding
+    the user for 15 minutes — nobody presses that button twice."""
+
+    def test_expire_override_is_used(self, _creds):
+        sess = _Session()
+        pushover.send(
+            "t", "m",
+            priority=pushover.PRIORITY_EMERGENCY,
+            expire_sec=pushover.TEST_EXPIRE_SEC,
+            session=sess,
+        )
+        assert sess.calls[0]["data"]["expire"] == pushover.TEST_EXPIRE_SEC
+
+    def test_real_alerts_keep_the_full_window(self, _creds):
+        sess = _Session()
+        pushover.send("t", "m", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        assert sess.calls[0]["data"]["expire"] == pushover.EXPIRE_SEC
+
+    def test_test_window_is_short_but_repeats_at_least_once(self):
+        assert pushover.TEST_EXPIRE_SEC < pushover.EXPIRE_SEC
+        assert pushover.TEST_EXPIRE_SEC >= pushover.RETRY_SEC * 2
+
+
+class TestStopHint:
+    """Whoever the phone wakes may not know what Pushover is. A repeating
+    alert must carry its own off switch."""
+
+    def test_emergency_message_explains_how_to_stop(self, _creds):
+        sess = _Session()
+        pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        msg = sess.calls[0]["data"]["message"]
+        assert msg.startswith("좌석 발견")
+        assert "Acknowledge" in msg
+
+    def test_high_priority_message_is_left_alone(self, _creds):
+        # A one-shot alert has nothing to stop; the hint would just be noise.
+        sess = _Session()
+        pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_HIGH, session=sess)
+        assert sess.calls[0]["data"]["message"] == "좌석 발견"
+
+    def test_away_downgrade_drops_the_hint_too(self, _creds):
+        # Downgraded to high, it no longer repeats — so it must not claim to.
+        pushover.set_mode("away")
+        try:
+            sess = _Session()
+            pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+            assert sess.calls[0]["data"]["message"] == "좌석 발견"
+        finally:
+            pushover.set_mode("home")

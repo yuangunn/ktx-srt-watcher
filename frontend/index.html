@@ -360,6 +360,18 @@
   </nav>
   </div>
 
+  <dialog class="sheet" id="station-sheet">
+    <div class="sheet__form sheet__form--station">
+      <div class="sheet__header">
+        <h2 class="sheet__title" id="station-title">출발역</h2>
+        <button class="icon-btn" type="button" id="station-close" aria-label="닫기">✕</button>
+      </div>
+      <input class="field__input" type="search" id="station-search" placeholder="역 이름 검색"
+             autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="station-list" id="station-list"></div>
+    </div>
+  </dialog>
+
   <dialog class="sheet" id="log-sheet">
     <div class="sheet__form sheet__form--logs">
       <header class="sheet__header">
@@ -389,15 +401,18 @@
       </fieldset>
 
       <div class="row row--2">
-        <label class="field">
+        <div class="field">
           <span class="field__label">출발</span>
-          <select class="field__input field__input--select" name="from" required></select>
-        </label>
-        <label class="field">
+          <button class="field__input field__input--picker" type="button" id="from-btn" data-empty="1">출발역</button>
+          <input type="hidden" name="from">
+        </div>
+        <div class="field">
           <span class="field__label">도착</span>
-          <select class="field__input field__input--select" name="to" required></select>
-        </label>
+          <button class="field__input field__input--picker" type="button" id="to-btn" data-empty="1">도착역</button>
+          <input type="hidden" name="to">
+        </div>
       </div>
+      <button class="btn btn--ghost btn--sm station-swap" type="button" id="swap-stations">↕ 출발·도착 바꾸기</button>
 
       <label class="field">
         <span class="field__label">날짜</span>
