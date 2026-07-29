@@ -117,6 +117,32 @@ function rememberRoute(provider, from, to) {
 }
 function clearCreds() { localStorage.removeItem(STORAGE_KEY); }
 
+// A PWA cold start races the network: the app is running before iOS has a
+// usable connection, so the very first fetch rejects with "Load failed"
+// (Safari) or "Failed to fetch". That is not a real error — it is a timing
+// problem, and one retry usually fixes it.
+function isNetworkError(e) {
+  const msg = String(e?.message || '');
+  return e instanceof TypeError
+    || msg.includes('Load failed')
+    || msg.includes('Failed to fetch')
+    || msg.includes('NetworkError');
+}
+
+// Retries only transient network failures. A 401 or a 404 is an answer, not a
+// timing problem, and retrying those would just delay the real handling.
+const RETRY_DELAYS_MS = [400, 1200, 3000];
+async function withNetworkRetry(fn) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isNetworkError(e) || i >= RETRY_DELAYS_MS.length) throw e;
+      await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[i]));
+    }
+  }
+}
+
 // ----- cloudflare worker store ----------------------------------------------
 
 // config and state live in the Worker's KV, not in the (public) repo — watch
@@ -434,7 +460,10 @@ function fmtRelative(iso) {
   if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`;
   return `${Math.floor(sec / 86400)}일 전`;
 }
-function fmtPassengers(p) {
+function fmtPassengers(passengers) {
+  // A watch written by an older version — or by hand into KV — may have no
+  // passengers block, and throwing here took the whole watch list down with it.
+  const p = passengers || {};
   const parts = [];
   if (p.adult) parts.push(`성인 ${p.adult}`);
   if (p.child) parts.push(`아동 ${p.child}`);
@@ -856,13 +885,14 @@ class App {
       // config/state come from CF KV; only the two source files that describe
       // the polling cadence still come from the repo (they are code, not data).
       const [config, state, wranglerFile, workflowFile] = await Promise.all([
-        this.cf.getConfig(),
-        this.cf.getState().catch(() => null),
+        withNetworkRetry(() => this.cf.getConfig()),
+        withNetworkRetry(() => this.cf.getState()).catch(() => null),
         this.gh.getFile('cloudflare-worker/wrangler.toml').catch(() => ({ sha: null, content: null })),
         this.gh.getFile('.github/workflows/watch.yml').catch(() => ({ sha: null, content: null })),
       ]);
       this.config = config || emptyConfig();
       this.state = state;
+      this._loadFailed = false;
       // Prefer the CF Worker cron over the GHA fallback when present.
       if (!this._parseCronFromWrangler(wranglerFile?.content)) {
         this._parseCronFromWorkflow(workflowFile?.content);
@@ -872,8 +902,17 @@ class App {
         this._handleAuthFailure();
         return;
       }
-      this._toast(`설정 로드 실패 — ${e.message}`);
       this.config = emptyConfig();
+      if (isNetworkError(e)) {
+        // Still offline after the retries. Don't accuse the user's setup of
+        // being broken — say what it is, and retry by itself once the network
+        // comes back rather than making them relaunch.
+        this._loadFailed = true;
+        this._armReconnect();
+        this._toast('네트워크에 연결되지 않아 목록을 불러오지 못했습니다. 연결되면 자동으로 다시 시도합니다.');
+      } else {
+        this._toast(`설정 로드 실패 — ${e.message}`);
+      }
     }
     this._renderHeader();
     this._renderWatches();
@@ -881,6 +920,23 @@ class App {
     this._loadRuns();
     this._loadStats();
     this._loadHealth();
+  }
+
+  // One-shot listeners that retry the load the moment the device is usable
+  // again — coming back online, or the app returning to the foreground.
+  _armReconnect() {
+    if (this._reconnectArmed) return;
+    this._reconnectArmed = true;
+    const retry = () => {
+      if (!this._loadFailed) return;
+      this._reconnectArmed = false;
+      window.removeEventListener('online', retry);
+      document.removeEventListener('visibilitychange', onVisible);
+      this._loadAll();
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') retry(); };
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', onVisible);
   }
 
   _parseCronFromWrangler(tomlText) {
@@ -1582,7 +1638,25 @@ class App {
     sheet.showModal();
   }
 
-  _toast(msg) { console.warn(msg); alert(msg); }
+  // alert() blocks the page and reads as a system-level failure. Most of what
+  // lands here is transient (a cold-start network blip, a save retry), so it
+  // gets a dismissible strip instead of a modal the user must acknowledge.
+  _toast(msg) {
+    console.warn(msg);
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.dataset.show = '1';
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { el.dataset.show = '0'; }, 4500);
+  }
 }
 
 // ----- setup screen ---------------------------------------------------------
