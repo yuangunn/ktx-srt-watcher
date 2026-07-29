@@ -261,6 +261,32 @@
       <div class="card card--rows">
         <div class="toggle-row">
           <div class="toggle-row__main">
+            <div class="toggle-row__title">집에 있음</div>
+            <div class="toggle-row__desc">켜면 긴급 알림이 무음·방해금지를 뚫고 크게 울립니다. 끄면 알림은 오되 무음 스위치를 따릅니다. 아이폰 단축어로 자동 전환할 수도 있습니다.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="home-mode-toggle" aria-label="집에 있음">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row toggle-row--stack">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">단축어 자동 전환</div>
+            <div class="toggle-row__desc">
+              단축어 앱 → 자동화 → 개인용 자동화 생성 → <strong>도착</strong>(집) →
+              즉시 실행 → 동작 <strong>URL의 콘텐츠 가져오기</strong> → 방식 <strong>PUT</strong> →
+              헤더 <code>Authorization</code> 에 복사한 토큰을 붙여넣으세요.
+              <strong>떠날 때</strong>로 하나 더 만들어 외출 URL을 넣으면 끝입니다.
+            </div>
+          </div>
+          <div class="copy-row">
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-token">토큰 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-home">집 URL 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-away">외출 URL 복사</button>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
             <div class="toggle-row__title">다크 모드</div>
             <div class="toggle-row__desc">라이트/다크 테마 전환. 이 기기에만 저장됩니다.</div>
           </div>
