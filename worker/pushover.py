@@ -42,6 +42,15 @@ EXPIRE_SEC = 900
 # people not to press the button.
 TEST_EXPIRE_SEC = 120
 
+# Appended to every repeating alert. Whoever picks up the phone may have no
+# idea what Pushover is — a partner, a parent — and without this the only way
+# to stop the ringing is to find someone who does. The button is labelled in
+# English in the app, so quote it verbatim rather than translating it.
+STOP_HINT = (
+    "\n\n🔁 이 알림은 확인할 때까지 반복됩니다.\n"
+    "멈추려면 Pushover 앱을 열고 [Acknowledge] 버튼을 누르세요."
+)
+
 # Set once per run from the phone-reported location.  Away, an emergency
 # alert is downgraded to high: it still arrives and still bypasses Pushover's
 # quiet hours, but it obeys the phone's mute switch instead of ringing at
@@ -86,7 +95,9 @@ def send(
         "token": os.environ["PUSHOVER_TOKEN"],
         "user": os.environ["PUSHOVER_USER"],
         "title": title,
-        "message": message,
+        # Only the repeating priority needs the hint; adding it to one-shot
+        # alerts would just be noise.
+        "message": message + STOP_HINT if priority == PRIORITY_EMERGENCY else message,
         "priority": priority,
     }
     if priority == PRIORITY_EMERGENCY:

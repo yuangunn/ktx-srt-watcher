@@ -160,3 +160,31 @@ class TestTestAlertExpiry:
     def test_test_window_is_short_but_repeats_at_least_once(self):
         assert pushover.TEST_EXPIRE_SEC < pushover.EXPIRE_SEC
         assert pushover.TEST_EXPIRE_SEC >= pushover.RETRY_SEC * 2
+
+
+class TestStopHint:
+    """Whoever the phone wakes may not know what Pushover is. A repeating
+    alert must carry its own off switch."""
+
+    def test_emergency_message_explains_how_to_stop(self, _creds):
+        sess = _Session()
+        pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        msg = sess.calls[0]["data"]["message"]
+        assert msg.startswith("좌석 발견")
+        assert "Acknowledge" in msg
+
+    def test_high_priority_message_is_left_alone(self, _creds):
+        # A one-shot alert has nothing to stop; the hint would just be noise.
+        sess = _Session()
+        pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_HIGH, session=sess)
+        assert sess.calls[0]["data"]["message"] == "좌석 발견"
+
+    def test_away_downgrade_drops_the_hint_too(self, _creds):
+        # Downgraded to high, it no longer repeats — so it must not claim to.
+        pushover.set_mode("away")
+        try:
+            sess = _Session()
+            pushover.send("t", "좌석 발견", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+            assert sess.calls[0]["data"]["message"] == "좌석 발견"
+        finally:
+            pushover.set_mode("home")
