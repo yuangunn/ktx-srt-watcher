@@ -105,6 +105,7 @@ def send(
         payload["expire"] = expire_sec or EXPIRE_SEC
     if url:
         payload["url"] = url
+        payload["url_title"] = "결제 완료 — 알림 중지"
     sess = session if session is not None else requests
     try:
         resp = sess.post(API_URL, data=payload, timeout=10)

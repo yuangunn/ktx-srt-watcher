@@ -21,6 +21,8 @@
 //   GET  /config             watch list; APP_TOKEN or REMINDER_TOKEN
 //   PUT  /config             PWA writes the watch list; APP_TOKEN
 //   GET  /config/backups     last CONFIG_BACKUPS versions; APP_TOKEN
+//   GET  /reminder/done      one-tap "I paid, stop the reminders"; HMAC token
+//                            in the query, since a notification link cannot POST
 //   GET  /state              poll state; APP_TOKEN or REMINDER_TOKEN
 //   PUT  /state              GHA watcher writes state; REMINDER_TOKEN
 //
@@ -273,6 +275,29 @@ export default {
       await env.STATE.put(MODE_KEY, JSON.stringify({ mode, manual_until }));
       return json({ mode, manual_until });
     }
+    // Tapped from a reminder once the user has paid. A mutating GET is the
+    // deliberate choice: it has to survive being a plain link in a Telegram
+    // message and a Pushover notification, where nothing can send a POST.
+    // The HMAC token is single-purpose and unguessable, so the exposure is a
+    // link that can only silence one reservation's reminders.
+    if (url.pathname === "/reminder/done" && request.method === "GET") {
+      const id = url.searchParams.get("id") || "";
+      const given = url.searchParams.get("t") || "";
+      if (!id || !given || !tokensEqual(given, await cancelToken(env, id))) {
+        return html("<h1>링크가 올바르지 않습니다</h1><p>알림을 중지하지 못했습니다.</p>", 403);
+      }
+      const all = await getAllReminders(env);
+      const existed = Boolean(all[id]);
+      if (existed) {
+        delete all[id];
+        await saveAllReminders(env, all);
+      }
+      return html(
+        existed
+          ? "<h1>알림을 중지했습니다</h1><p>이 예약의 결제 마감 알림이 더 이상 오지 않습니다.</p>"
+          : "<h1>이미 중지되어 있습니다</h1><p>보낼 알림이 남아 있지 않습니다.</p>",
+      );
+    }
     // Read-only view of the backup ring, newest first, for manual recovery.
     if (url.pathname === "/config/backups" && request.method === "GET") {
       if (!authorized(request, env, env.APP_TOKEN)) {
@@ -331,6 +356,27 @@ async function dispatchWatcher(env, source) {
 // final stretch fires every minute rather than once.
 const REMINDER_OFFSETS_MIN = [3, 6, 9, 12, 14, 15, 16, 17, 18, 19];
 const ALL_KEY = "all";
+
+// One-tap "I paid, stop" link carried in every reminder. Derived by HMAC from
+// the reservation id so both sides can compute it without storing or passing
+// anything, and so it cannot be guessed for someone else's reservation.
+async function cancelToken(env, reservationId) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", enc.encode(env.REMINDER_TOKEN || ""),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(String(reservationId)));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+// Constant-time compare so a wrong token can't be narrowed down by timing.
+function tokensEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 async function getAllReminders(env) {
   const raw = await env.REMINDERS.get(ALL_KEY);
@@ -397,7 +443,10 @@ async function processReminders(env) {
     for (const r of record.reminders) {
       if (r.sent || r.trigger_at_ms > now) continue;
       try {
-        const body = formatReminder(record, r);
+        const cancelUrl = env.WORKER_URL
+          ? `${env.WORKER_URL.replace(/\/$/, "")}/reminder/done?id=${encodeURIComponent(record.id)}&t=${await cancelToken(env, record.id)}`
+          : "";
+        const body = formatReminder(record, r, cancelUrl);
         await sendTelegram(env, body);
         // Telegram cannot override the iOS mute switch, which is how a
         // payment deadline gets slept through. Pushover can, so the last
@@ -410,6 +459,8 @@ async function processReminders(env) {
           title: r.kind === "final" ? "⛔ 결제 마감 임박" : "🔔 결제 마감 알림",
           message: body,
           priority: r.kind === "final" && !away ? 2 : 1,
+          url: cancelUrl,
+          urlTitle: "결제 완료 — 알림 중지",
         });
         r.sent = true;
         dirty = true;
@@ -427,12 +478,12 @@ async function processReminders(env) {
   if (dirty) await saveAllReminders(env, all);
 }
 
-function formatReminder(rec, reminder) {
+function formatReminder(rec, reminder, cancelUrl) {
   const app = rec.provider === "srt" ? "SR 앱" : "코레일톡";
   const head = reminder.kind === "final"
     ? `⛔ 결제 마감 약 ${reminder.remaining_min}분 남음 — 마지막 기회`
     : `🔔 결제 마감 약 ${reminder.remaining_min}분 남음`;
-  return [
+  const lines = [
     head,
     "",
     `${rec.route} ${rec.date}`,
@@ -440,7 +491,14 @@ function formatReminder(rec, reminder) {
     `예약번호 ${rec.id}`,
     "",
     `${app}에서 결제하세요.`,
-  ].join("\n");
+  ];
+  // Nothing here knows whether the user has already paid — Korail/SR are only
+  // reachable from the Python watcher, which may not run again inside the
+  // 20-minute window. So the message carries its own off switch.
+  if (cancelUrl) {
+    lines.push("", `결제를 마쳤다면 눌러서 알림 중지 → ${cancelUrl}`);
+  }
+  return lines.join("\n");
 }
 
 // Pushover is the channel that can actually wake the user: iOS only lets an
@@ -457,7 +515,7 @@ const PUSHOVER_STOP_HINT =
   "\n\n🔁 이 알림은 확인할 때까지 반복됩니다.\n" +
   "멈추려면 Pushover 앱을 열고 [Acknowledge] 버튼을 누르세요.";
 
-async function sendPushover(env, { title, message, priority = 1 }) {
+async function sendPushover(env, { title, message, priority = 1, url, urlTitle }) {
   if (!env.PUSHOVER_TOKEN || !env.PUSHOVER_USER) return;
   const form = new URLSearchParams({
     token: env.PUSHOVER_TOKEN,
@@ -467,6 +525,10 @@ async function sendPushover(env, { title, message, priority = 1 }) {
     message: priority === 2 ? message + PUSHOVER_STOP_HINT : message,
     priority: String(priority),
   });
+  if (url) {
+    form.set("url", url);
+    if (urlTitle) form.set("url_title", urlTitle);
+  }
   if (priority === 2) {
     form.set("retry", String(PUSHOVER_RETRY_SEC));
     form.set("expire", String(PUSHOVER_EXPIRE_SEC));
@@ -693,6 +755,21 @@ function ghHeaders(env) {
 // discards the response before the PWA can read the status, so "no config
 // stored yet" and "wrong token" both surface as an opaque network error —
 // which is exactly how a correct app token got reported as invalid.
+// Opened from a phone by tapping a notification, so it gets a real page
+// rather than a bare string.
+function html(body, status = 200) {
+  return new Response(
+    `<!doctype html><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<style>body{font:16px/1.6 -apple-system,system-ui,sans-serif;margin:0;` +
+    `min-height:100dvh;display:flex;flex-direction:column;justify-content:center;` +
+    `align-items:center;text-align:center;padding:32px;color:#191F28;background:#F2F4F6}` +
+    `h1{font-size:20px;margin:0 0 8px}p{margin:0;color:#6B7684;font-size:14px}</style>` +
+    body,
+    { status, headers: { "Content-Type": "text/html; charset=utf-8", ...CORS } },
+  );
+}
+
 function text(body, status = 200, extraHeaders) {
   return new Response(body, {
     status,

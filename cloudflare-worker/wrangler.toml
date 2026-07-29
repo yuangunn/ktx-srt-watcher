@@ -49,6 +49,9 @@ id = "e637a6093c6749f183d9112b94eca3de"
 
 [vars]
 GITHUB_REPO = "yuangunn/ktx-srt-watcher"
+# Needed to build the "결제 완료 — 알림 중지" link carried in each reminder.
+# A Worker cannot know its own public hostname, so it has to be told.
+WORKER_URL = "https://ktx-srt-watcher-cron.rms6654.workers.dev"
 EVENT_TYPE = "cron-tick"
 # Secrets (set via:  npx wrangler secret put NAME)
 #   GITHUB_TOKEN        Fine-grained PAT, Contents:rw + Actions:rw on the repo
