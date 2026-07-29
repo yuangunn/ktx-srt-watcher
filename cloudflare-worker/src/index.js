@@ -1,12 +1,13 @@
 // KTX/SRT Watcher · Cloudflare Worker.
 //
 // Two crons fire on this Worker:
-//   "*/5 * * * *"   → dispatchWatcher: GHA repository_dispatch every 5 min.
-//                     This is just the trigger cadence; the watcher decides
-//                     whether to actually poll based on its own throttle
-//                     (settings.poll_interval_mode: fixed/range/choices).
-//                     Fine granularity lets randomized intervals land near
-//                     target instead of snapping to a 30-min boundary.
+//   "*/3 * * * *"   → dispatchWatcher: GHA repository_dispatch every 3 min.
+//                     Trigger cadence only — the watcher's throttle decides
+//                     whether a tick reaches Korail/SRT, and a throttled one
+//                     exits before pip install. Polls land on tick boundaries,
+//                     so the spacing quantises the configured interval upward;
+//                     */3 keeps a randomised range spread instead of piling it
+//                     onto two values the way */5 did.
 //   "*/1 * * * *"   → processReminders: reads the REMINDERS KV (single key)
 //                     and fires any due payment-deadline reminders to Telegram.
 //                     Uses a single .get() instead of .list() to stay within
@@ -116,7 +117,7 @@ async function rotateConfigBackups(env, prevBody) {
 
 export default {
   async scheduled(event, env, ctx) {
-    if (event.cron === "*/5 * * * *") {
+    if (event.cron === "*/3 * * * *") {
       ctx.waitUntil(dispatchWatcher(env, "cron"));
     } else if (event.cron === "*/1 * * * *") {
       ctx.waitUntil(processReminders(env));

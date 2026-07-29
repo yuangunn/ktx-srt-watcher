@@ -4,12 +4,18 @@ compatibility_date = "2026-04-30"
 
 # Cron schedules for this Worker (each fires the scheduled handler with
 # event.cron equal to the matching string):
-#   "*/5 * * * *"   → dispatchWatcher: triggers GHA repository_dispatch
-#                     every 5 min. This is the *trigger* granularity; the
-#                     watcher itself decides whether to actually poll based
-#                     on settings.poll_interval_mode (fixed/range/choices).
-#                     Fine granularity lets randomized intervals (e.g. 27m)
-#                     land close to target instead of snapping to 30m.
+#   "*/3 * * * *"   → dispatchWatcher: triggers GHA repository_dispatch
+#                     every 3 min. This is the *trigger* granularity, not the
+#                     poll rate — the watcher's own throttle decides whether a
+#                     tick actually reaches Korail/SRT, and a throttled tick
+#                     exits before `pip install` (see worker/gate.py).
+#                     A poll only ever fires on a tick boundary, so the tick
+#                     spacing quantises every interval upward: at */5 a
+#                     24–36 min range collapsed onto {25,30,35,40} with 30 and
+#                     35 taking 38% each. */3 gives {24,27,30,33,36} evenly,
+#                     which is what makes the randomisation worth having.
+#                     Not */1: that string is already taken by the reminder
+#                     cron below, and the handler dispatches on it.
 #   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
 #                     any due payment-deadline reminders to Telegram
 #   "0 */6 * * *"   → heartbeatCheck: alerts if state.json::last_run is
@@ -27,7 +33,7 @@ compatibility_date = "2026-04-30"
 # GHA minutes are free/unlimited; the watcher's own throttle keeps the
 # actual Korail/SRT poll rate sane (min 10 min, see settings.poll_interval_mode).
 [triggers]
-crons = ["*/5 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
+crons = ["*/3 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"
