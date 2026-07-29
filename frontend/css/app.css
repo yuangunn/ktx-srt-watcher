@@ -940,6 +940,26 @@ hr { border: 0; margin: 0; }
 .copy-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .copy-row .btn { flex: 1 1 auto; }
 
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(100px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 12px);
+  z-index: 40;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 13px 16px;
+  border-radius: 14px;
+  background: rgba(25, 31, 40, .94);
+  color: #fff;
+  font-size: 13.5px; line-height: 1.5;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.toast[data-show="1"] { opacity: 1; transform: translate(-50%, 0); }
+
 /* ---------- station picker ---------- */
 /* A button that looks like the other fields but opens a searchable sheet —
    scanning an 80-option dropdown on a phone was the slowest step in adding a
