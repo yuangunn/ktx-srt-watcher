@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 from typing import Protocol
 
@@ -107,6 +109,43 @@ def notify_summary(
     send_telegram(bot_token, chat_id, text, session=session, silent=silent)
 
 
+def reminder_cancel_url(reservation_id: str) -> str | None:
+    """One-tap "I paid, stop the reminders" link.
+
+    Nothing in the reminder loop can tell whether the user has paid — Korail/SR
+    are only reachable from this watcher, which may not run again inside the
+    20-minute window — so the message carries its own off switch instead.
+
+    The token is an HMAC of the reservation id under REMINDER_TOKEN: both sides
+    derive it independently, nothing extra is stored, and it cannot be guessed
+    for someone else's reservation.
+    """
+    base = (os.environ.get("CF_WORKER_URL") or "").rstrip("/")
+    secret = os.environ.get("REMINDER_TOKEN") or ""
+    if not base or not secret or not reservation_id:
+        return None
+    tok = hmac.new(
+        secret.encode("utf-8"), str(reservation_id).encode("utf-8"), hashlib.sha256,
+    ).hexdigest()[:16]
+    return f"{base}/reminder/done?id={reservation_id}&t={tok}"
+
+
+def cancel_reminders(reservation_id: str) -> None:
+    """Silence a reservation's reminders once payment is confirmed.
+
+    Best-effort backstop to the link in the message: this only runs on a poll,
+    which may be half an hour away, so it is not what saves the user from a
+    ringing phone — it just stops stragglers.
+    """
+    url = reminder_cancel_url(reservation_id)
+    if not url:
+        return
+    try:
+        requests.get(url, timeout=10)
+    except Exception:
+        pass
+
+
 def format_reservation_success(watch: Watch, train: Train, reservation: Reservation) -> str:
     app_name = "코레일톡" if watch.provider == "korail" else "SR 앱"
     if reservation.is_standby:
@@ -134,6 +173,7 @@ def format_reservation_success(watch: Watch, train: Train, reservation: Reservat
         f"\n"
         f"⚠️ 결제는 {app_name}에서 직접 해 주세요. "
         f"마감 시간 지나면 좌석이 자동 해제됩니다."
+        + (f"\n\n결제를 마쳤다면 눌러서 알림 중지 → {cancel}" if (cancel := reminder_cancel_url(reservation.reservation_id)) else "")
     )
 
 
@@ -157,7 +197,11 @@ def notify_reservation_success(
     text = format_reservation_success(watch, train, reservation)
     send_telegram(bot_token, chat_id, text, session=session)
     # The hold lapses in ~20 minutes unless the user pays, so this must land.
-    pushover.send("✅ 임시예약 성공 — 결제 필요", text, priority=pushover.PRIORITY_EMERGENCY)
+    pushover.send(
+        "✅ 임시예약 성공 — 결제 필요", text,
+        priority=pushover.PRIORITY_EMERGENCY,
+        url=reminder_cancel_url(reservation.reservation_id),
+    )
 
 
 def notify_reservation_failure(
