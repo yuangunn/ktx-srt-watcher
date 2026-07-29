@@ -44,7 +44,7 @@ PWA([Cloudflare Pages](https://pages.cloudflare.com))로 워치 추가/수정/�
        │  GitHub Repo        ││   - config (워치)   │
        │  (public, 코드만)   ││   - state (폴링기록)│
        │  - .github/...      ││                     │
-       │  - worker/...       ││  Cron */5:          │
+       │  - worker/...       ││  Cron */3:          │
        │  - frontend/...     ││   → repository_     │
        │  - cloudflare-      ││     dispatch ──┐    │
        │      worker/...     ││                │    │
@@ -216,7 +216,7 @@ PWA `+ 워치 추가` 버튼:
 | Cloudflare Pages | 정적 파일 호스팅 | 500 build/월, 무제한 요청 | 여유 |
 | Cloudflare KV | 30 reads + 30 writes/일 | 100k/일 | 여유 |
 
-레포가 퍼블릭이라 GitHub Actions 실행 시간은 무제한·무료입니다. CF 트리거는 `*/5`로 촘촘하게 두고, 실제 폴링 빈도는 워커의 throttle(최소 10분, fixed/range/choices)이 제어합니다.
+레포가 퍼블릭이라 GitHub Actions 실행 시간은 무제한·무료입니다. CF 트리거는 `*/3`으로 촘촘하게 두고, 실제 폴링 빈도는 워커의 throttle(최소 10분, fixed/range/choices)이 제어합니다.
 
 ---
 
@@ -224,7 +224,7 @@ PWA `+ 워치 추가` 버튼:
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| 폴링이 설정한 간격보다 늦거나 불규칙함 | 실제 폴링은 CF Worker `*/5 repository_dispatch` 트리거 위에서 워커 throttle로 동작. 랜덤 모드는 의도적으로 불규칙. CF Worker 정상 배포 여부는 `npx wrangler tail`로 확인 |
+| 폴링이 설정한 간격보다 늦거나 불규칙함 | 실제 폴링은 CF Worker `*/3 repository_dispatch` 트리거 위에서 워커 throttle로 동작. 폴링은 트리거 경계에만 걸리므로 설정 간격이 3분 단위로 올림됨(24~36 범위 → 24/27/30/33/36). 랜덤 모드는 의도적으로 불규칙. CF Worker 정상 배포 여부는 `npx wrangler tail`로 확인 |
 | 텔레그램 알림이 안 옴 | 1) `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` GitHub secret 확인. 2) 봇 채팅창에 `/start` 한 번 보냈는지. 3) PWA의 "조용한 시간"이 지금 시간대를 포함하는지 |
 | 자동 예약 직후 "동일한 예약" 에러 | state 기록이 다음 run보다 늦게 반영된 case. 어댑터가 `WRR800029` / "동일한 예약" 메시지를 detect하면 silent dedupe — 정상 동작 |
 | `결제 마감 12:06`처럼 시간이 이상함 | 이전 버그. 지금은 코레일/SRT 응답의 실제 deadline + KST 변환을 사용. 신규 임시예약부터 정상 |

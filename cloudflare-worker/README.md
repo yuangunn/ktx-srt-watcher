@@ -7,7 +7,7 @@ GitHub `repository_dispatch` events to wake the watcher workflow.
 ~30–60 min between runs (we observed ~48 min for `*/10 * * * *`).  CF cron
 triggers fire to-the-second.
 
-**Cost**: free.  At `*/5 * * * *` the worker invokes 288 times/day, well
+**Cost**: free.  At `*/3 * * * *` the worker invokes 480 times/day, well
 under the 100k/day free request quota.
 
 ## One-time setup
@@ -88,7 +88,7 @@ npx wrangler deploy
 ```
 
 Worker URL appears in the output (e.g. `https://ktx-srt-watcher-cron.<account>.workers.dev`).
-The cron starts firing on the next 5-min boundary.
+The cron starts firing on the next 3-min boundary.
 
 ## Verify
 
@@ -111,11 +111,18 @@ Edit `wrangler.toml`:
 
 ```toml
 [triggers]
-crons = ["*/5 * * * *"]   # change to "*/3", "*/10", etc.
+crons = ["*/3 * * * *"]   # change to "*/5", "*/10", etc.
+# A poll only fires on a tick boundary, so the tick spacing rounds every
+# configured interval up. Keep the interval a multiple of the tick, or
+# widen the random range, or the randomisation collapses onto a few values.
 ```
 
-Then `npx wrangler deploy`.  Avoid going below `*/3` — Korail/SR anti-bot
-checks may flag too-frequent polls.
+Then `npx wrangler deploy`.
+
+Note this is the *trigger* rate, not the poll rate: a tick whose turn has not
+come exits before `pip install` and never contacts Korail/SR.  What reaches
+them is governed by the watcher's own throttle (min 10 min).  Going finer
+costs GHA runs and KV reads, not requests to the rail operators.
 
 ## Rotate / revoke
 

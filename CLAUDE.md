@@ -14,7 +14,7 @@ PWA(GitHub Pages)에서 감시 조건을 추가/삭제.
 ```
 [아이폰 PWA] ──APP_TOKEN──→ [CF Worker KV] ←──REMINDER_TOKEN──┐
                              config / state                   │
-                                    ↑ */5 repository_dispatch  │
+                                    ↑ */3 repository_dispatch  │
                               [Actions cron]                  │
                                     ↓                         │
                         worker/main.py (Python 3.11)          │
