@@ -99,6 +99,18 @@ def fetch_state() -> dict[str, Any]:
         return {"last_run": None, "watches": {}}
 
 
+def fetch_mode() -> str:
+    """"home" or "away" — set from the phone, since only it knows where the
+    user is.  Any failure falls back to "home": missing a 3am cancellation
+    costs a trip, a stray alert in a lecture costs embarrassment."""
+    try:
+        raw = _request("/mode")
+        mode = json.loads(raw.decode("utf-8")).get("mode")
+    except (RemoteError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        return "home"
+    return "away" if mode == "away" else "home"
+
+
 def push_state(state: dict[str, Any]) -> None:
     body = json.dumps(state, ensure_ascii=False).encode("utf-8")
     _request("/state", method="PUT", body=body)

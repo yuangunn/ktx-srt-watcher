@@ -129,6 +129,13 @@ class CFStore {
   async putConfig(config) {
     await this._req('/config', { method: 'PUT', body: JSON.stringify(config, null, 2) + '\n' });
   }
+  async getMode() {
+    const res = await this._req('/mode');
+    return (await res.json()).mode;
+  }
+  async setMode(mode) {
+    await this._req(`/mode?mode=${encodeURIComponent(mode)}`, { method: 'PUT' });
+  }
   async getState() {
     try {
       const res = await this._req('/state');
@@ -567,6 +574,8 @@ class App {
 
     this._wireTabs();
     this._wireTheme();
+    this._wireHomeMode();
+    this._wireShortcutCopy();
     this._wireFab();
     this._wireSheet();
     this._wireCheckNow();
@@ -618,6 +627,54 @@ class App {
       applyTheme(theme);
       saveTheme(theme);
     });
+  }
+  // "집에 있음". Reflects the value stored in CF, which an iOS Shortcuts
+  // automation may also be flipping on arrival/departure — so read it back on
+  // load rather than trusting anything cached on this device.
+  _wireHomeMode() {
+    const toggle = $('#home-mode-toggle');
+    if (!toggle) return;
+    this.cf.getMode()
+      .then(mode => { toggle.checked = mode !== 'away'; })
+      .catch(() => { toggle.checked = true; });
+    toggle.addEventListener('change', async () => {
+      const wanted = toggle.checked;
+      toggle.disabled = true;
+      try {
+        await this.cf.setMode(wanted ? 'home' : 'away');
+      } catch (e) {
+        toggle.checked = !wanted;   // don't show a state we failed to save
+        this._toast(`알림 모드 저장 실패 — ${e.message}`);
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+  }
+  // The Shortcut needs the app token in an Authorization header. Typing a
+  // 64-char token on a phone keyboard is where this setup gets abandoned, so
+  // hand over ready-made strings instead.
+  _wireShortcutCopy() {
+    const base = this._cfWorkerUrl.replace(/\/$/, '');
+    const items = [
+      // Copy the whole header value, not the bare token — it is pasted
+      // straight into the Shortcut's Authorization field.
+      ['#copy-token', () => `Bearer ${this.cf.token}`, 'Authorization 값'],
+      ['#copy-url-home', () => `${base}/mode?mode=home`, '집 URL'],
+      ['#copy-url-away', () => `${base}/mode?mode=away`, '외출 URL'],
+    ];
+    for (const [sel, value, label] of items) {
+      const btn = $(sel);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(value());
+          this._toast(`${label} 복사됨`);
+        } catch {
+          // Clipboard API needs a secure context and can still be refused.
+          this._toast(`복사 실패 — 길게 눌러 직접 복사해 주세요`);
+        }
+      });
+    }
   }
   _wireHealthRefresh() {
     const btn = $('#health-refresh');

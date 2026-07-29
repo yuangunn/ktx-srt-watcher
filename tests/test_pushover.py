@@ -99,3 +99,40 @@ class TestSend:
         assert "url" not in sess.calls[0]["data"]
         pushover.send("t", "m", url="https://example.com", session=sess)
         assert sess.calls[1]["data"]["url"] == "https://example.com"
+
+
+class TestAlertMode:
+    """Away, an emergency alert must not ring at full volume in a lecture —
+    but it must still arrive."""
+
+    def setup_method(self):
+        pushover.set_mode("home")
+
+    def teardown_method(self):
+        pushover.set_mode("home")
+
+    def test_away_downgrades_emergency_to_high(self):
+        pushover.set_mode("away")
+        assert pushover.effective_priority(pushover.PRIORITY_EMERGENCY) == pushover.PRIORITY_HIGH
+
+    def test_away_leaves_high_alone(self):
+        pushover.set_mode("away")
+        assert pushover.effective_priority(pushover.PRIORITY_HIGH) == pushover.PRIORITY_HIGH
+
+    def test_home_keeps_emergency(self):
+        pushover.set_mode("home")
+        assert pushover.effective_priority(pushover.PRIORITY_EMERGENCY) == pushover.PRIORITY_EMERGENCY
+
+    def test_unknown_mode_falls_back_to_home(self):
+        # A garbled value must not silently mute the alert that matters.
+        pushover.set_mode("nonsense")
+        assert pushover.effective_priority(pushover.PRIORITY_EMERGENCY) == pushover.PRIORITY_EMERGENCY
+
+    def test_away_send_drops_retry_fields(self, _creds):
+        pushover.set_mode("away")
+        sess = _Session()
+        pushover.send("t", "m", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        data = sess.calls[0]["data"]
+        assert data["priority"] == pushover.PRIORITY_HIGH
+        assert "retry" not in data
+        assert "expire" not in data

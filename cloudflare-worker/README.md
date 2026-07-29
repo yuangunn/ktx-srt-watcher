@@ -50,6 +50,15 @@ and are served only against a bearer token:
 | `GET /config/backups` | PWA | `APP_TOKEN` |
 | `GET /state` | PWA, watcher | `APP_TOKEN` or `REMINDER_TOKEN` |
 | `PUT /state` | watcher only | `REMINDER_TOKEN` |
+| `GET /mode` | PWA, watcher | `APP_TOKEN` or `REMINDER_TOKEN` |
+| `PUT /mode` | PWA, iOS Shortcut | `APP_TOKEN` |
+
+`/mode` is `home` or `away` and decides whether an urgent alert may override
+the phone's mute switch.  Only the phone knows where the user is, so it pushes
+the value here; anything unreadable falls back to `home`, because a missed 3am
+cancellation costs more than a stray alert.  `PUT` accepts `?mode=away` as well
+as a JSON body — Shortcuts is much easier to set up against a bare query
+string.
 
 `PUT /config` keeps the previous 5 versions in a backup ring — KV has no
 history of its own and this is now the only copy of the watch list.
