@@ -162,6 +162,10 @@
             <span class="toggle__track"><span class="toggle__thumb"></span></span>
           </label>
         </div>
+        <div class="mode-note" id="home-mode-note" hidden>
+          <span class="mode-note__text">직접 바꾼 설정을 유지 중입니다 — 단축어 자동 전환은 6시간 동안 무시됩니다.</span>
+          <button class="btn btn--ghost btn--sm" type="button" id="home-mode-release">자동에 맡기기</button>
+        </div>
         <div class="toggle-row">
           <div class="toggle-row__main">
             <div class="toggle-row__title">빈 결과도 알림</div>
@@ -242,8 +246,10 @@
             <li>같은 순서로 <strong>떠날 때</strong> 자동화를 하나 더 만들고, URL만 <strong>외출 URL</strong> 로</li>
           </ol>
           <p class="guide__note">
-            자동화가 실패해도 위 <strong>집에 있음</strong> 토글로 언제든 직접 바꿀 수 있습니다.
-            두 방법은 같은 값을 쓰므로 서로 어긋나지 않습니다.
+            <strong>직접 바꾼 값이 자동화보다 우선합니다.</strong> 위 토글을 손으로 움직이면
+            이후 6시간 동안 자동 전환이 무시됩니다 — 집에 늦게까지 남아 있거나 폰만 두고
+            나가는 상황을 위치만으로는 알 수 없기 때문입니다. 바로 자동으로 되돌리려면
+            토글 아래의 <strong>자동에 맡기기</strong> 를 누르세요.
           </p>
           <div class="copy-row">
             <button class="btn btn--ghost btn--sm" type="button" id="copy-token">Authorization 복사</button>

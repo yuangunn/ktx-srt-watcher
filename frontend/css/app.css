@@ -940,6 +940,16 @@ hr { border: 0; margin: 0; }
 .copy-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .copy-row .btn { flex: 1 1 auto; }
 
+/* Manual-override banner under the 집에 있음 toggle. */
+.mode-note {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: -2px; padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ember-weak);
+}
+.mode-note__text { flex: 1 1 180px; font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
+.mode-note[hidden] { display: none !important; }
+
 /* ---------- collapsible how-to ---------- */
 .guide { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .guide:first-of-type { border-top: 0; }
