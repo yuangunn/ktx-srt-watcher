@@ -131,10 +131,19 @@ class CFStore {
   }
   async getMode() {
     const res = await this._req('/mode');
-    return (await res.json()).mode;
+    return await res.json();          // { mode, manual, manual_until }
   }
+  // No src=auto: a write from the app is a manual override and outranks the
+  // Shortcut automation for a few hours.
   async setMode(mode) {
-    await this._req(`/mode?mode=${encodeURIComponent(mode)}`, { method: 'PUT' });
+    const res = await this._req(`/mode?mode=${encodeURIComponent(mode)}`, { method: 'PUT' });
+    return await res.json();
+  }
+  // Hand control back to the automation without changing the current mode.
+  async clearModeHold(mode) {
+    const res = await this._req(
+      `/mode?mode=${encodeURIComponent(mode)}&hold=clear`, { method: 'PUT' });
+    return await res.json();
   }
   async getState() {
     try {
@@ -635,14 +644,21 @@ class App {
   _wireHomeMode() {
     const toggle = $('#home-mode-toggle');
     if (!toggle) return;
-    this.cf.getMode()
-      .then(mode => { toggle.checked = mode !== 'away'; })
-      .catch(() => { toggle.checked = true; });
+    const note = $('#home-mode-note');
+    const release = $('#home-mode-release');
+
+    const render = (rec) => {
+      toggle.checked = rec?.mode !== 'away';
+      if (note) note.hidden = !rec?.manual;
+    };
+    this.cf.getMode().then(render).catch(() => render({ mode: 'home' }));
+
     toggle.addEventListener('change', async () => {
       const wanted = toggle.checked;
       toggle.disabled = true;
       try {
-        await this.cf.setMode(wanted ? 'home' : 'away');
+        const rec = await this.cf.setMode(wanted ? 'home' : 'away');
+        render({ ...rec, manual: true });
       } catch (e) {
         toggle.checked = !wanted;   // don't show a state we failed to save
         this._toast(`알림 모드 저장 실패 — ${e.message}`);
@@ -650,6 +666,21 @@ class App {
         toggle.disabled = false;
       }
     });
+
+    if (release) {
+      release.addEventListener('click', async () => {
+        release.disabled = true;
+        try {
+          const rec = await this.cf.clearModeHold(toggle.checked ? 'home' : 'away');
+          render({ ...rec, manual: false });
+          this._toast('자동 전환에 다시 맡깁니다');
+        } catch (e) {
+          this._toast(`해제 실패 — ${e.message}`);
+        } finally {
+          release.disabled = false;
+        }
+      });
+    }
   }
   // The Shortcut needs the app token in an Authorization header. Typing a
   // 64-char token on a phone keyboard is where this setup gets abandoned, so
@@ -660,8 +691,8 @@ class App {
       // Copy the whole header value, not the bare token — it is pasted
       // straight into the Shortcut's Authorization field.
       ['#copy-token', () => `Bearer ${this.cf.token}`, 'Authorization 값'],
-      ['#copy-url-home', () => `${base}/mode?mode=home`, '집 URL'],
-      ['#copy-url-away', () => `${base}/mode?mode=away`, '외출 URL'],
+      ['#copy-url-home', () => `${base}/mode?mode=home&src=auto`, '집 URL'],
+      ['#copy-url-away', () => `${base}/mode?mode=away&src=auto`, '외출 URL'],
     ];
     for (const [sel, value, label] of items) {
       const btn = $(sel);

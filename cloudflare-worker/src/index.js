@@ -50,11 +50,36 @@ const MODE_KEY = "alert_mode";
 const MODE_HOME = "home";
 const MODE_AWAY = "away";
 
+// How long a manual flip of the toggle outranks the Shortcut automation.
+// The user knows something the geofence does not — staying late, going out
+// without the phone noticing — so their choice wins. Bounded, though: an
+// override that never expired would silently mute alerts for good once
+// forgotten.
+const MANUAL_TTL_MS = 6 * 60 * 60 * 1000;
+
+// Stored as JSON. Older deployments wrote a bare "home"/"away" string, so
+// read through both shapes.
+async function readModeRecord(env) {
+  const raw = await env.STATE.get(MODE_KEY);
+  if (!raw) return { mode: MODE_HOME, manual_until: 0 };
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object") {
+      return {
+        mode: v.mode === MODE_AWAY ? MODE_AWAY : MODE_HOME,
+        manual_until: Number(v.manual_until) || 0,
+      };
+    }
+  } catch {
+    // fall through to the legacy bare-string form
+  }
+  return { mode: raw === MODE_AWAY ? MODE_AWAY : MODE_HOME, manual_until: 0 };
+}
+
 // Default home: a missed 3am cancellation costs a trip, a stray alert in a
 // lecture costs embarrassment.  Fail toward the louder mistake.
 async function readMode(env) {
-  const v = await env.STATE.get(MODE_KEY);
-  return v === MODE_AWAY ? MODE_AWAY : MODE_HOME;
+  return (await readModeRecord(env)).mode;
 }
 
 // Two callers, two secrets.  APP_TOKEN lives in the PWA (extractable from the
@@ -194,19 +219,33 @@ export default {
       if (!authorized(request, env, env.APP_TOKEN, env.REMINDER_TOKEN)) {
         return text("unauthorized\n", 401);
       }
-      return json({ mode: await readMode(env) });
+      const rec = await readModeRecord(env);
+      return json({
+        mode: rec.mode,
+        manual_until: rec.manual_until,
+        manual: rec.manual_until > Date.now(),
+      });
     }
     // Written by the PWA toggle and by an iOS Shortcuts automation on
     // arriving/leaving home.  Accepts the value in a JSON body or as ?mode=,
     // because Shortcuts is far easier to set up with a bare query string.
+    //
+    // ?src=auto marks the write as coming from the automation. A manual flip
+    // outranks it for MANUAL_TTL_MS: the geofence does not know the user
+    // stayed late or stepped out without their phone, and having the
+    // automation quietly undo a deliberate choice is worse than being
+    // slightly stale.
     if (url.pathname === "/mode" && request.method === "PUT") {
       if (!authorized(request, env, env.APP_TOKEN)) {
         return text("unauthorized\n", 401);
       }
       let mode = url.searchParams.get("mode");
+      let src = url.searchParams.get("src");
       if (!mode) {
         try {
-          mode = (await request.json()).mode;
+          const body = await request.json();
+          mode = body.mode;
+          src = src || body.src;
         } catch {
           return text("mode required\n", 400);
         }
@@ -214,8 +253,24 @@ export default {
       if (mode !== MODE_HOME && mode !== MODE_AWAY) {
         return text(`mode must be "${MODE_HOME}" or "${MODE_AWAY}"\n`, 400);
       }
-      await env.STATE.put(MODE_KEY, mode);
-      return json({ mode });
+      const now = Date.now();
+      const current = await readModeRecord(env);
+      if (src === "auto") {
+        if (current.manual_until > now) {
+          return json({
+            mode: current.mode,
+            manual_until: current.manual_until,
+            skipped: "manual override active",
+          });
+        }
+        await env.STATE.put(MODE_KEY, JSON.stringify({ mode, manual_until: 0 }));
+        return json({ mode, manual_until: 0 });
+      }
+      // "clear" releases the override without changing the mode, handing
+      // control back to the automation.
+      const manual_until = url.searchParams.get("hold") === "clear" ? 0 : now + MANUAL_TTL_MS;
+      await env.STATE.put(MODE_KEY, JSON.stringify({ mode, manual_until }));
+      return json({ mode, manual_until });
     }
     // Read-only view of the backup ring, newest first, for manual recovery.
     if (url.pathname === "/config/backups" && request.method === "GET") {

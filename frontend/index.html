@@ -129,6 +129,139 @@
 
     <!-- ===== SETTINGS TAB ===== -->
     <section class="tab-section" id="tab-settings" data-tab="settings" hidden>
+
+      <!-- ── 알림 ───────────────────────────────────────────── -->
+      <div class="section-head"><span class="section-head__label">알림</span></div>
+
+      <div class="card card--rows">
+        <div class="card__desc">
+          텔레그램은 항상 나갑니다. Pushover는 아이폰의 무음 스위치와 방해금지를 뚫을 수 있는
+          유일한 경로입니다 — 텔레그램에는 Apple의 해당 권한이 없습니다.
+        </div>
+        <div class="toggle-row toggle-row--stack">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">알림 테스트</div>
+            <div class="toggle-row__desc">
+              실제 좌석 발견 알림을 그대로 한 번 발송합니다. 조회도 예약도 하지 않습니다.
+              Pushover는 <strong>폰을 무음으로 두고</strong> 눌러 보세요 — 새벽에 실제로 울릴지
+              확인하는 유일한 방법입니다.
+            </div>
+          </div>
+          <div class="copy-row">
+            <button class="btn btn--ghost btn--sm" type="button" id="test-telegram">텔레그램 테스트</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="test-pushover">Pushover 테스트</button>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">집에 있음</div>
+            <div class="toggle-row__desc">켜면 긴급 알림이 무음·방해금지를 뚫고 확인할 때까지 반복합니다. 끄면 알림은 오되 무음 스위치를 따릅니다.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="home-mode-toggle" aria-label="집에 있음">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+        <div class="mode-note" id="home-mode-note" hidden>
+          <span class="mode-note__text">직접 바꾼 설정을 유지 중입니다 — 단축어 자동 전환은 6시간 동안 무시됩니다.</span>
+          <button class="btn btn--ghost btn--sm" type="button" id="home-mode-release">자동에 맡기기</button>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">빈 결과도 알림</div>
+            <div class="toggle-row__desc">잔여석 0건이어도 텔레그램으로 요약 메시지 전송. 수동은 토글과 무관하게 항상 알림.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="notify-empty-toggle" aria-label="빈 결과 알림">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">잔여 있는 동안 계속 알림</div>
+            <div class="toggle-row__desc">이미 알린 좌석도 잔여석이 있는 한 폴링마다 다시 알림. 끄면 좌석당 한 번만.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="renotify-toggle" aria-label="잔여 있는 동안 계속 알림">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">조용한 시간 <span class="card__tag mono">KST</span></div>
+        <div class="card__desc">이 시간대 cron 알림은 무음으로 전송. 수동·임시예약·마감 알림은 항상 소리. 비워두면 항상 소리.</div>
+        <div class="pm-input pm-input--two">
+          <div class="pm-input__col">
+            <span class="pm-input__label">시작</span>
+            <input class="pm-input__box mono" type="time" id="quiet-start" />
+          </div>
+          <div class="pm-input__col">
+            <span class="pm-input__label">종료</span>
+            <input class="pm-input__box mono" type="time" id="quiet-end" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Pushover ───────────────────────────────────────── -->
+      <div class="section-head"><span class="section-head__label">Pushover</span></div>
+
+      <div class="card">
+        <div class="card__desc">
+          아이폰은 Apple이 <strong>Critical Alerts</strong> 권한을 준 앱만 무음 스위치와
+          방해금지를 무시할 수 있습니다. 텔레그램에는 그 권한이 없어서, 알림음을 뭘로 바꾸든
+          집중 모드에서 예외로 두든 무음은 뚫리지 않습니다. Pushover에는 있습니다.
+        </div>
+
+        <details class="guide">
+          <summary class="guide__summary">처음 설정하기 <span class="guide__chev">›</span></summary>
+          <ol class="guide__steps">
+            <li><strong>App Store에서 Pushover 설치</strong> — 일회성 유료(약 $5)입니다. 구독이 아닙니다.</li>
+            <li><strong>앱에서 계정 만들고 로그인</strong> — 로그인해야 기기가 등록되고, 등록 전에는 어떤 알림도 도착하지 않습니다.</li>
+            <li><strong>User Key 복사</strong> — <code>pushover.net</code> 에 로그인하면 첫 화면 오른쪽 위에 보이는 30자 문자열입니다.</li>
+            <li><strong>API Token 만들기</strong> — <code>pushover.net/apps/build</code> 에서 앱을 하나 생성해야 나옵니다. User Key와는 <em>다른 값</em>입니다.</li>
+            <li><strong>⚠️ 아이폰 Pushover 앱 → 설정 → Critical Alerts 허용</strong> — 이걸 켜야 무음이 뚫립니다. 이 단계를 빼면 나머지를 다 해도 새벽에 안 울립니다.</li>
+            <li><strong>GitHub 저장소</strong> Settings → Secrets and variables → Actions 에 <code>PUSHOVER_TOKEN</code>(4번), <code>PUSHOVER_USER</code>(3번) 추가</li>
+            <li><strong>Cloudflare Worker에도</strong> 같은 값 등록 — 결제 마감 알림이 Worker에서 나갑니다:<br>
+              <code>npx wrangler secret put PUSHOVER_TOKEN</code><br>
+              <code>npx wrangler secret put PUSHOVER_USER</code></li>
+            <li>위 <strong>알림 테스트 → Pushover</strong> 를 <strong>폰 무음 상태로</strong> 눌러 확인</li>
+          </ol>
+        </details>
+
+        <details class="guide">
+          <summary class="guide__summary">단축어로 집/외출 자동 전환 <span class="guide__chev">›</span></summary>
+          <p class="guide__note">
+            위치 자동화는 아이폰에서 직접 만드는 수밖에 없습니다 — Apple이 트리거 공유를 막아뒀습니다.
+            대신 붙여넣을 값은 아래 버튼으로 바로 복사됩니다.
+          </p>
+          <ol class="guide__steps">
+            <li><strong>단축어</strong> 앱 → 아래 <strong>자동화</strong> 탭 → <strong>+</strong> → 새로운 자동화</li>
+            <li><strong>도착</strong> 선택 → 위치를 집으로 지정</li>
+            <li><strong>즉시 실행</strong> 선택 (실행 전 물어보기는 끄기). 이걸 안 하면 매번 알림을 눌러야 동작합니다.</li>
+            <li>동작 검색에서 <strong>URL의 콘텐츠 가져오기</strong> 추가</li>
+            <li>URL 칸에 <strong>집 URL 복사</strong> 로 복사한 주소 붙여넣기</li>
+            <li>URL 아래 <strong>화살표(▸)</strong> 를 눌러 펼치고 → <strong>방식</strong>을 <code>PUT</code> 으로 변경</li>
+            <li><strong>헤더</strong> → 필드 추가 → 키 <code>Authorization</code>, 값에 <strong>Authorization 복사</strong> 로 복사한 값 붙여넣기</li>
+            <li>같은 순서로 <strong>떠날 때</strong> 자동화를 하나 더 만들고, URL만 <strong>외출 URL</strong> 로</li>
+          </ol>
+          <p class="guide__note">
+            <strong>직접 바꾼 값이 자동화보다 우선합니다.</strong> 위 토글을 손으로 움직이면
+            이후 6시간 동안 자동 전환이 무시됩니다 — 집에 늦게까지 남아 있거나 폰만 두고
+            나가는 상황을 위치만으로는 알 수 없기 때문입니다. 바로 자동으로 되돌리려면
+            토글 아래의 <strong>자동에 맡기기</strong> 를 누르세요.
+          </p>
+          <div class="copy-row">
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-token">Authorization 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-home">집 URL 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-away">외출 URL 복사</button>
+          </div>
+        </details>
+      </div>
+
+      <!-- ── 감시 동작 ──────────────────────────────────────── -->
+      <div class="section-head"><span class="section-head__label">감시 동작</span></div>
+
       <div class="card">
         <div class="card__title">폴링 간격</div>
         <div class="card__desc">최소 10분. 범위·목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 실제 정밀도는 CF 트리거 주기(5분) 단위. 수동(지금 확인)은 항상 즉시 동작.</div>
@@ -165,16 +298,6 @@
       <div class="card card--rows">
         <div class="toggle-row">
           <div class="toggle-row__main">
-            <div class="toggle-row__title">빈 결과도 알림</div>
-            <div class="toggle-row__desc">잔여석 0건이어도 텔레그램으로 요약 메시지 전송. 수동은 토글과 무관하게 항상 알림.</div>
-          </div>
-          <label class="toggle">
-            <input class="toggle__input" type="checkbox" id="notify-empty-toggle" aria-label="빈 결과 알림">
-            <span class="toggle__track"><span class="toggle__thumb"></span></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-row__main">
             <div class="toggle-row__title">대기예약 자동 등록</div>
             <div class="toggle-row__desc">매진 좌석에 코레일 try_waiting / SRT reserve_standby로 대기 등록. 임시예약과 동시 진행.</div>
           </div>
@@ -183,119 +306,10 @@
             <span class="toggle__track"><span class="toggle__thumb"></span></span>
           </label>
         </div>
-        <div class="toggle-row">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">잔여 있는 동안 계속 알림</div>
-            <div class="toggle-row__desc">이미 알린 좌석도 잔여석이 있는 한 폴링마다 다시 알림. 끄면 좌석당 한 번만.</div>
-          </div>
-          <label class="toggle">
-            <input class="toggle__input" type="checkbox" id="renotify-toggle" aria-label="잔여 있는 동안 계속 알림">
-            <span class="toggle__track"><span class="toggle__thumb"></span></span>
-          </label>
-        </div>
       </div>
 
-      <div class="card">
-        <div class="card__title">조용한 시간 <span class="card__tag mono">KST</span></div>
-        <div class="card__desc">이 시간대 cron 알림은 무음으로 전송. 수동·임시예약·reminder는 항상 소리. 비워두면 항상 소리.</div>
-        <div class="pm-input pm-input--two">
-          <div class="pm-input__col">
-            <span class="pm-input__label">시작</span>
-            <input class="pm-input__box mono" type="time" id="quiet-start" />
-          </div>
-          <div class="pm-input__col">
-            <span class="pm-input__label">종료</span>
-            <input class="pm-input__box mono" type="time" id="quiet-end" />
-          </div>
-        </div>
-      </div>
-
-      <div class="card card--rows">
-        <div class="card__title">알림</div>
-        <div class="card__desc">
-          텔레그램은 항상 나갑니다. Pushover는 아이폰의 무음 스위치와 방해금지를
-          뚫을 수 있는 유일한 경로입니다 — 텔레그램에는 Apple의 해당 권한이 없습니다.
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">집에 있음</div>
-            <div class="toggle-row__desc">켜면 긴급 알림이 무음·방해금지를 뚫고 확인할 때까지 반복합니다. 끄면 알림은 오되 무음 스위치를 따릅니다.</div>
-          </div>
-          <label class="toggle">
-            <input class="toggle__input" type="checkbox" id="home-mode-toggle" aria-label="집에 있음">
-            <span class="toggle__track"><span class="toggle__thumb"></span></span>
-          </label>
-        </div>
-        <div class="toggle-row toggle-row--stack">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">알림 테스트</div>
-            <div class="toggle-row__desc">
-              실제 좌석 발견 알림을 그대로 한 번 발송합니다. 조회도 예약도 하지 않습니다.
-              Pushover 테스트는 <strong>폰을 무음으로 두고</strong> 눌러 보세요 — 그게 새벽에
-              실제로 울릴지 확인하는 유일한 방법입니다.
-            </div>
-          </div>
-          <div class="copy-row">
-            <button class="btn btn--ghost btn--sm" type="button" id="test-telegram">텔레그램 테스트</button>
-            <button class="btn btn--ghost btn--sm" type="button" id="test-pushover">Pushover 테스트</button>
-          </div>
-        </div>
-        <div class="toggle-row toggle-row--stack">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">단축어 자동 전환</div>
-            <div class="toggle-row__desc">
-              단축어 앱 → 자동화 → 개인용 자동화 생성 → <strong>도착</strong>(집) →
-              즉시 실행 → 동작 <strong>URL의 콘텐츠 가져오기</strong> → 방식 <strong>PUT</strong> →
-              헤더 <code>Authorization</code> 에 복사한 값을 붙여넣으세요.
-              <strong>떠날 때</strong>로 하나 더 만들어 외출 URL을 넣으면 끝입니다.
-            </div>
-          </div>
-          <div class="copy-row">
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-token">Authorization 복사</button>
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-home">집 URL 복사</button>
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-away">외출 URL 복사</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card card--rows">
-        <div class="toggle-row">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">집에 있음</div>
-            <div class="toggle-row__desc">켜면 긴급 알림이 무음·방해금지를 뚫고 크게 울립니다. 끄면 알림은 오되 무음 스위치를 따릅니다. 아이폰 단축어로 자동 전환할 수도 있습니다.</div>
-          </div>
-          <label class="toggle">
-            <input class="toggle__input" type="checkbox" id="home-mode-toggle" aria-label="집에 있음">
-            <span class="toggle__track"><span class="toggle__thumb"></span></span>
-          </label>
-        </div>
-        <div class="toggle-row toggle-row--stack">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">단축어 자동 전환</div>
-            <div class="toggle-row__desc">
-              단축어 앱 → 자동화 → 개인용 자동화 생성 → <strong>도착</strong>(집) →
-              즉시 실행 → 동작 <strong>URL의 콘텐츠 가져오기</strong> → 방식 <strong>PUT</strong> →
-              헤더 <code>Authorization</code> 에 복사한 토큰을 붙여넣으세요.
-              <strong>떠날 때</strong>로 하나 더 만들어 외출 URL을 넣으면 끝입니다.
-            </div>
-          </div>
-          <div class="copy-row">
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-token">토큰 복사</button>
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-home">집 URL 복사</button>
-            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-away">외출 URL 복사</button>
-          </div>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-row__main">
-            <div class="toggle-row__title">다크 모드</div>
-            <div class="toggle-row__desc">라이트/다크 테마 전환. 이 기기에만 저장됩니다.</div>
-          </div>
-          <label class="toggle">
-            <input class="toggle__input" type="checkbox" id="theme-toggle" aria-label="다크 모드">
-            <span class="toggle__track"><span class="toggle__thumb"></span></span>
-          </label>
-        </div>
-      </div>
+      <!-- ── 시스템 ─────────────────────────────────────────── -->
+      <div class="section-head"><span class="section-head__label">시스템</span></div>
 
       <div class="card" id="health-card">
         <div class="card__title">시스템 상태
@@ -306,6 +320,19 @@
         <div class="health__fails" id="health-fails" hidden>
           <div class="health__fails-label">최근 실패</div>
           <ul class="health__fails-list" id="health-fails-list"></ul>
+        </div>
+      </div>
+
+      <div class="card card--rows">
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">다크 모드</div>
+            <div class="toggle-row__desc">라이트/다크 테마 전환. 이 기기에만 저장됩니다.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="theme-toggle" aria-label="다크 모드">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
         </div>
       </div>
     </section>

@@ -548,7 +548,22 @@ hr { border: 0; margin: 0; }
 }
 .pm-input__box::placeholder { color: var(--ink4); opacity: .7; }
 .pm-input__box:focus { border-color: var(--primary); }
-.pm-input__box[type="time"] { color-scheme: light; }
+/* iOS renders a time input as "오전 09:00" and gives its shadow DOM an
+   intrinsic width that ignores width:100%, so two side by side overflowed the
+   card on a 16 Pro Max. Drop the native chrome, let the inner value shrink,
+   and tighten the padding. */
+.pm-input__box[type="time"] {
+  color-scheme: light;
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 10px;
+  font-size: 14px;
+}
+.pm-input__box[type="time"]::-webkit-date-and-time-value {
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
 :root[data-theme="dark"] .pm-input__box[type="time"] { color-scheme: dark; }
 
 .toggle-row {
@@ -786,7 +801,20 @@ hr { border: 0; margin: 0; }
 .field__input::placeholder { color: var(--ink4); opacity: .7; }
 .field__input:focus { border-color: var(--primary); }
 .field__input--mono { font-family: var(--f-mono); }
-.field__input[type="date"], .field__input[type="time"] { color-scheme: light; }
+.field__input[type="date"], .field__input[type="time"] {
+  color-scheme: light;
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* Same iOS intrinsic-width problem as the settings time inputs — the sheet's
+   "최저 시간 / 최대 시간" pair sat side by side and overlapped. */
+.field__input[type="time"] { padding: 0 10px; font-size: 14px; }
+.field__input[type="date"]::-webkit-date-and-time-value,
+.field__input[type="time"]::-webkit-date-and-time-value {
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
 :root[data-theme="dark"] .field__input[type="date"],
 :root[data-theme="dark"] .field__input[type="time"] { color-scheme: dark; }
 .field__input--select {
@@ -805,6 +833,11 @@ hr { border: 0; margin: 0; }
 .row--2 { grid-template-columns: 1fr 1fr; }
 .row--3 { grid-template-columns: 1fr 1fr 1fr; }
 .row > * { min-width: 0; }
+/* Last resort: if a native control still refuses to shrink, stack instead of
+   letting it push out of the card. */
+@media (max-width: 380px) {
+  .row--2, .pm-input--two { grid-template-columns: 1fr; }
+}
 
 /* provider / seat segmented (radio-based) */
 .seg {
@@ -906,6 +939,47 @@ hr { border: 0; margin: 0; }
 .toggle-row--stack { flex-direction: column; align-items: stretch; gap: 10px; }
 .copy-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .copy-row .btn { flex: 1 1 auto; }
+
+/* Manual-override banner under the 집에 있음 toggle. */
+.mode-note {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: -2px; padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ember-weak);
+}
+.mode-note__text { flex: 1 1 180px; font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
+.mode-note[hidden] { display: none !important; }
+
+/* ---------- collapsible how-to ---------- */
+.guide { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.guide:first-of-type { border-top: 0; }
+.guide__summary {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  font-size: 14px; font-weight: 700; color: var(--ink);
+  cursor: pointer; list-style: none;
+  padding: 6px 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.guide__summary::-webkit-details-marker { display: none; }
+.guide__chev { color: var(--ink4); transition: transform .15s ease; }
+.guide[open] .guide__chev { transform: rotate(90deg); }
+.guide__steps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 13px; line-height: 1.65; color: var(--ink2);
+}
+.guide__steps code {
+  font-family: var(--f-mono); font-size: 12px;
+  background: var(--fill); border-radius: 6px; padding: 2px 6px;
+  overflow-wrap: anywhere;
+}
+.guide__note {
+  margin: 10px 0 0;
+  font-size: 12.5px; line-height: 1.6; color: var(--ink3);
+}
+.guide .copy-row { margin-top: 12px; }
 
 /* ==========================================================================
    Setup screen (first run)
