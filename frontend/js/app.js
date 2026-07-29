@@ -202,13 +202,13 @@ class GitHub {
     }
     return { ok: res.ok, status: res.status, expiresAt };
   }
-  async dispatchWorkflow(workflowFile, ref = 'main') {
+  async dispatchWorkflow(workflowFile, ref = 'main', inputs = null) {
     const res = await fetch(
       `https://api.github.com/repos/${this.repo}/actions/workflows/${workflowFile}/dispatches`,
       {
         method: 'POST',
         headers: { ...this._headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref }),
+        body: JSON.stringify(inputs ? { ref, inputs } : { ref }),
       },
     );
     if (res.status === 204) return;
@@ -576,6 +576,7 @@ class App {
     this._wireTheme();
     this._wireHomeMode();
     this._wireShortcutCopy();
+    this._wireTestNotify();
     this._wireFab();
     this._wireSheet();
     this._wireCheckNow();
@@ -672,6 +673,35 @@ class App {
         } catch {
           // Clipboard API needs a secure context and can still be refused.
           this._toast(`복사 실패 — 길게 눌러 직접 복사해 주세요`);
+        }
+      });
+    }
+  }
+  // Drives the real alert path with a fabricated find, so the phone shows and
+  // sounds exactly what a genuine cancellation will — without waiting for one
+  // to appear at 3am, which is when you'd otherwise discover it was broken.
+  _wireTestNotify() {
+    // Separate buttons on purpose: Telegram and Pushover fail for entirely
+    // different reasons (bot token vs. Critical Alerts permission), and one
+    // combined test would hide which of the two is broken.
+    for (const [sel, channel, label] of [
+      ['#test-telegram', 'telegram', '텔레그램'],
+      ['#test-pushover', 'pushover', 'Pushover'],
+    ]) {
+      const btn = $(sel);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '발송 중…';
+        try {
+          await this.gh.dispatchWorkflow('watch.yml', 'main', { test_notify: channel });
+          this._toast(`${label} 테스트 요청됨 — 30초쯤 뒤 도착합니다`);
+        } catch (e) {
+          this._toast(`${label} 테스트 실패 — ${e.message}`);
+        } finally {
+          setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 3000);
         }
       });
     }

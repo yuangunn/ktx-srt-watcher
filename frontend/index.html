@@ -211,6 +211,54 @@
       </div>
 
       <div class="card card--rows">
+        <div class="card__title">알림</div>
+        <div class="card__desc">
+          텔레그램은 항상 나갑니다. Pushover는 아이폰의 무음 스위치와 방해금지를
+          뚫을 수 있는 유일한 경로입니다 — 텔레그램에는 Apple의 해당 권한이 없습니다.
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">집에 있음</div>
+            <div class="toggle-row__desc">켜면 긴급 알림이 무음·방해금지를 뚫고 확인할 때까지 반복합니다. 끄면 알림은 오되 무음 스위치를 따릅니다.</div>
+          </div>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="home-mode-toggle" aria-label="집에 있음">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row toggle-row--stack">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">알림 테스트</div>
+            <div class="toggle-row__desc">
+              실제 좌석 발견 알림을 그대로 한 번 발송합니다. 조회도 예약도 하지 않습니다.
+              Pushover 테스트는 <strong>폰을 무음으로 두고</strong> 눌러 보세요 — 그게 새벽에
+              실제로 울릴지 확인하는 유일한 방법입니다.
+            </div>
+          </div>
+          <div class="copy-row">
+            <button class="btn btn--ghost btn--sm" type="button" id="test-telegram">텔레그램 테스트</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="test-pushover">Pushover 테스트</button>
+          </div>
+        </div>
+        <div class="toggle-row toggle-row--stack">
+          <div class="toggle-row__main">
+            <div class="toggle-row__title">단축어 자동 전환</div>
+            <div class="toggle-row__desc">
+              단축어 앱 → 자동화 → 개인용 자동화 생성 → <strong>도착</strong>(집) →
+              즉시 실행 → 동작 <strong>URL의 콘텐츠 가져오기</strong> → 방식 <strong>PUT</strong> →
+              헤더 <code>Authorization</code> 에 복사한 값을 붙여넣으세요.
+              <strong>떠날 때</strong>로 하나 더 만들어 외출 URL을 넣으면 끝입니다.
+            </div>
+          </div>
+          <div class="copy-row">
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-token">Authorization 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-home">집 URL 복사</button>
+            <button class="btn btn--ghost btn--sm" type="button" id="copy-url-away">외출 URL 복사</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--rows">
         <div class="toggle-row">
           <div class="toggle-row__main">
             <div class="toggle-row__title">집에 있음</div>
