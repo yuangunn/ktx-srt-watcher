@@ -136,3 +136,27 @@ class TestAlertMode:
         assert data["priority"] == pushover.PRIORITY_HIGH
         assert "retry" not in data
         assert "expire" not in data
+
+
+class TestTestAlertExpiry:
+    """A test alert must prove it cuts through silence without then hounding
+    the user for 15 minutes — nobody presses that button twice."""
+
+    def test_expire_override_is_used(self, _creds):
+        sess = _Session()
+        pushover.send(
+            "t", "m",
+            priority=pushover.PRIORITY_EMERGENCY,
+            expire_sec=pushover.TEST_EXPIRE_SEC,
+            session=sess,
+        )
+        assert sess.calls[0]["data"]["expire"] == pushover.TEST_EXPIRE_SEC
+
+    def test_real_alerts_keep_the_full_window(self, _creds):
+        sess = _Session()
+        pushover.send("t", "m", priority=pushover.PRIORITY_EMERGENCY, session=sess)
+        assert sess.calls[0]["data"]["expire"] == pushover.EXPIRE_SEC
+
+    def test_test_window_is_short_but_repeats_at_least_once(self):
+        assert pushover.TEST_EXPIRE_SEC < pushover.EXPIRE_SEC
+        assert pushover.TEST_EXPIRE_SEC >= pushover.RETRY_SEC * 2

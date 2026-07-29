@@ -36,6 +36,12 @@ PRIORITY_EMERGENCY = 2
 RETRY_SEC = 60
 EXPIRE_SEC = 900
 
+# A test alert has to prove it can cut through silence — so it still uses
+# emergency priority — but it must not then hound the user for 15 minutes.
+# Two repeats is enough to show the behaviour; anything longer just teaches
+# people not to press the button.
+TEST_EXPIRE_SEC = 120
+
 # Set once per run from the phone-reported location.  Away, an emergency
 # alert is downgraded to high: it still arrives and still bypasses Pushover's
 # quiet hours, but it obeys the phone's mute switch instead of ringing at
@@ -68,6 +74,7 @@ def send(
     *,
     priority: int = PRIORITY_HIGH,
     url: str | None = None,
+    expire_sec: int | None = None,
     session: _PostSession | None = None,
 ) -> None:
     """Best-effort push. Never raises: Pushover is the backup channel and the
@@ -84,7 +91,7 @@ def send(
     }
     if priority == PRIORITY_EMERGENCY:
         payload["retry"] = RETRY_SEC
-        payload["expire"] = EXPIRE_SEC
+        payload["expire"] = expire_sec or EXPIRE_SEC
     if url:
         payload["url"] = url
     sess = session if session is not None else requests

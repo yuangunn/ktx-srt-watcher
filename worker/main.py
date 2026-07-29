@@ -436,6 +436,7 @@ def send_test_notification(channel: str = "all") -> int:
             "🧪 테스트 — 좌석 발견 알림",
             body,
             priority=pushover.PRIORITY_EMERGENCY,
+            expire_sec=pushover.TEST_EXPIRE_SEC,
         )
         log.info("pushover 테스트 알림 발송 완료 (mode=%s)", pushover._mode)
 
