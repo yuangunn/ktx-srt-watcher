@@ -136,6 +136,12 @@ hr { border: 0; margin: 0; }
 
 .tab-section { display: flex; flex-direction: column; gap: 16px; }
 .tab-section[hidden] { display: none; }
+/* The FAB floats over the scroll area and reaches 96+52 = 148px up from the
+   bottom, but .scroll only pads 108px — so it landed on the last card's 삭제
+   button and toggle. Only the watch tab shows a FAB, so only it pays the
+   difference; padding the shared .scroll would leave the other tabs with a
+   dead strip. */
+#tab-watch { padding-bottom: 56px; }
 
 /* ---------- header ---------- */
 
