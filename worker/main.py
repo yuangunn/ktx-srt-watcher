@@ -161,8 +161,23 @@ def run_watches(
         try:
             provider.login(user, password)
         except Exception as e:
+            # A failed login used to be logged and skipped, which is the
+            # quietest way this system can die: the run still succeeds, the
+            # state timestamp still advances, so the heartbeat and the health
+            # card both stay green while nothing is being watched.
             log.exception("[%s] login failed: %s", provider_name, e)
+            if state_mod.record_login_failure(state, provider_name, now_iso):
+                try:
+                    notifier.notify_login_failed(provider_name, str(e))
+                except Exception as nfx:
+                    log.exception("login-failure notify itself failed: %s", nfx)
             continue
+        if state_mod.clear_login_failure(state, provider_name):
+            log.info("[%s] login recovered", provider_name)
+            try:
+                notifier.notify_login_recovered(provider_name)
+            except Exception as nfx:
+                log.exception("login-recovery notify itself failed: %s", nfx)
         # Settle holds placed on earlier runs before hunting again: a hold that
         # lapsed unpaid re-arms auto-reserve here, so this poll can re-reserve.
         _resolve_pending_reservations(
