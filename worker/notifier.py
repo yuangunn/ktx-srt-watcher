@@ -257,6 +257,55 @@ def notify_auto_reserve_rearmed(
     send_telegram(bot_token, chat_id, text, session=session)
 
 
+PROVIDER_LABEL = {"korail": "코레일", "srt": "SRT"}
+
+
+def format_login_failed(provider: str, error_msg: str) -> str:
+    label = PROVIDER_LABEL.get(provider, provider)
+    return (
+        f"🚨 {label} 로그인 실패 — 감시 중단\n"
+        f"\n"
+        f"{label} 계정으로 로그인하지 못해 해당 노선을 확인하지 못하고 있습니다.\n"
+        f"좌석이 나와도 알림이 가지 않습니다.\n"
+        f"\n"
+        f"사유: {error_msg}\n"
+        f"\n"
+        f"비밀번호 변경, 계정 잠금, 또는 통합회원 전환으로 자격증명이 바뀌었을 수 있습니다. "
+        f"앱에서 로그인해 확인한 뒤 저장소 시크릿을 갱신해 주세요."
+    )
+
+
+def notify_login_failed(
+    provider: str, error_msg: str, *, session: _PostSession | None = None,
+) -> None:
+    text = format_login_failed(provider, error_msg)
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        send_telegram(bot_token, chat_id, text, session=session)
+    # High, not emergency: there is nothing to do about it at 3am, and a
+    # repeat-until-acknowledged alarm for a broken password would train the
+    # user to ignore the channel that has to work when a seat appears.
+    pushover.send(f"🚨 {PROVIDER_LABEL.get(provider, provider)} 로그인 실패",
+                  text, priority=pushover.PRIORITY_HIGH)
+
+
+def format_login_recovered(provider: str) -> str:
+    label = PROVIDER_LABEL.get(provider, provider)
+    return f"✅ {label} 로그인 복구 — 감시를 재개했습니다."
+
+
+def notify_login_recovered(
+    provider: str, *, session: _PostSession | None = None,
+) -> None:
+    text = format_login_recovered(provider)
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        send_telegram(bot_token, chat_id, text, session=session)
+    pushover.send("✅ 로그인 복구", text, priority=pushover.PRIORITY_HIGH)
+
+
 def _fmt_deadline(iso: str | None) -> str:
     """Render a timezone-aware ISO timestamp as KST HH:MM (UTC+9).
 

@@ -109,6 +109,54 @@ def clear_pending_reservation(state: dict[str, Any], watch_id: str) -> None:
         del pend[watch_id]
 
 
+# Re-alert about a still-broken login once a day. Alerting every poll would be
+# ~48 messages/day and get muted; alerting only once means a failure noticed at
+# 3am and dismissed half-asleep is never raised again.
+LOGIN_ALERT_REPEAT_HOURS = 24
+
+
+def record_login_failure(state: dict[str, Any], provider: str, when: str) -> bool:
+    """Remember that a provider login failed. True if the caller should alert.
+
+    A dead login is the quietest possible failure: the run still succeeds, the
+    state timestamp still advances, so neither the heartbeat nor the health card
+    notices — the watcher simply stops checking that provider.
+    """
+    failures = state.setdefault("login_failures", {})
+    entry = failures.get(provider)
+    if entry is None:
+        failures[provider] = {"since": when, "notified_at": when}
+        return True
+    last = _parse_iso(entry.get("notified_at"))
+    now = _parse_iso(when)
+    if last is None or now is None:
+        return False
+    if (now - last).total_seconds() >= LOGIN_ALERT_REPEAT_HOURS * 3600:
+        entry["notified_at"] = when
+        return True
+    return False
+
+
+def clear_login_failure(state: dict[str, Any], provider: str) -> bool:
+    """Called on a successful login. True if it had been failing, so the caller
+    can say it is back — otherwise the user is left wondering."""
+    failures = state.get("login_failures") or {}
+    if provider in failures:
+        del failures[provider]
+        return True
+    return False
+
+
+def _parse_iso(value: str | None):
+    from datetime import datetime
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def mark_check(state: dict[str, Any], watch_id: str, when: str) -> None:
     _entry(state, watch_id)["last_check"] = when
 

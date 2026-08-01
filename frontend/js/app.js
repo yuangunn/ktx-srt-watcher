@@ -1088,7 +1088,23 @@ class App {
       rows.push({ name: '폴링', level: 'warn', detail: '실행 기록 없음' });
     }
 
-    // 2) GitHub Actions — recent run conclusions
+    // 2) Provider logins. A dead Korail/SRT login is the quietest failure this
+    // system has: the run succeeds, last_run advances, and every other row here
+    // stays green while nothing is actually being watched.
+    const loginFailures = this.state?.login_failures || {};
+    const failed = Object.keys(loginFailures);
+    if (failed.length) {
+      const label = { korail: '코레일', srt: 'SRT' };
+      rows.push({
+        name: '철도사 로그인',
+        level: 'bad',
+        detail: `${failed.map(p => label[p] || p).join(', ')} 실패 · 감시 중단`,
+      });
+    } else {
+      rows.push({ name: '철도사 로그인', level: 'ok', detail: '정상' });
+    }
+
+    // 3) GitHub Actions — recent run conclusions
     let failures = [];
     try {
       const runs = await this.gh.listRuns('watch.yml', 20);
@@ -1103,7 +1119,7 @@ class App {
       rows.push({ name: 'GitHub Actions', level: 'warn', detail: '조회 실패' });
     }
 
-    // 3) CF Worker /health
+    // 4) CF Worker /health
     if (this._cfWorkerUrl) {
       const healthUrl = `${this._cfWorkerUrl.replace(/\/$/, '')}/health`;
       try {
@@ -1127,7 +1143,7 @@ class App {
       rows.push({ name: 'CF Worker', level: 'warn', detail: '미설정' });
     }
 
-    // 4) PAT expiry
+    // 5) PAT expiry
     try {
       const info = await this.gh.tokenInfo();
       if (!info.ok) {
