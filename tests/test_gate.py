@@ -1,5 +1,5 @@
 """Tests for the pre-install poll gate (worker.throttle.will_poll)."""
-from worker.throttle import will_poll, should_throttle, AUTOMATED_EVENTS
+from worker.throttle import will_poll, AUTOMATED_EVENTS
 
 
 CFG = {"settings": {"poll_interval_mode": "range", "poll_interval_range": [24, 36]}}
