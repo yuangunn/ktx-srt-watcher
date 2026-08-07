@@ -117,6 +117,22 @@ function rememberRoute(provider, from, to) {
 }
 function clearCreds() { localStorage.removeItem(STORAGE_KEY); }
 
+// GitHub cancels a job that has waited ~15 min for a runner, and reports the
+// run as a failure even though nothing ever executed — no runner, no logs.
+// The workflow sets timeout-minutes: 8, so no run that actually started can
+// last this long: anything at or beyond the threshold was starved, not broken.
+// Worth separating, because a starved tick costs nothing (state is untouched,
+// so the next tick picks the poll straight up) while a real failure means the
+// watcher is down.
+const RUNNER_STARVED_MIN = 12;
+function isRunnerStarved(run) {
+  if (!run.conclusion || run.conclusion === 'success' || run.conclusion === 'skipped') return false;
+  const started = Date.parse(run.started);
+  const finished = Date.parse(run.finished);
+  if (!Number.isFinite(started) || !Number.isFinite(finished)) return false;
+  return (finished - started) / 60000 >= RUNNER_STARVED_MIN;
+}
+
 // A PWA cold start races the network: the app is running before iOS has a
 // usable connection, so the very first fetch rejects with "Load failed"
 // (Safari) or "Failed to fetch". That is not a real error — it is a timing
@@ -1108,12 +1124,29 @@ class App {
     let failures = [];
     try {
       const runs = await this.gh.listRuns('watch.yml', 20);
-      failures = runs.filter(r => r.conclusion && r.conclusion !== 'success' && r.conclusion !== 'skipped');
+      const notOk = runs.filter(r => r.conclusion && r.conclusion !== 'success' && r.conclusion !== 'skipped');
+      const starved = notOk.filter(isRunnerStarved);
+      // Only genuine failures reach the list below: a starved run has no logs,
+      // so offering it as a clickable "최근 실패" led nowhere.
+      failures = notOk.filter(r => !isRunnerStarved(r));
       const bad = failures.filter(r => r.conclusion === 'failure').length;
-      const level = bad ? 'bad' : (failures.length ? 'warn' : 'ok');
-      const detail = bad ? `최근 ${runs.length}회 중 실패 ${bad}`
-        : failures.length ? `최근 ${runs.length}회 중 취소 ${failures.length}`
-        : `최근 ${runs.length}회 모두 정상`;
+
+      let level, detail;
+      if (bad) {
+        level = 'bad';
+        detail = `최근 ${runs.length}회 중 실패 ${bad}`;
+      } else if (failures.length) {
+        level = 'warn';
+        detail = `최근 ${runs.length}회 중 취소 ${failures.length}`;
+      } else if (starved.length) {
+        // Harmless in ones and twos — the next tick covers the poll. Only
+        // flag it once it is frequent enough to actually delay polling.
+        level = starved.length > runs.length / 4 ? 'warn' : 'ok';
+        detail = `정상 · 러너 지연 ${starved.length}회 (폴링 영향 없음)`;
+      } else {
+        level = 'ok';
+        detail = `최근 ${runs.length}회 모두 정상`;
+      }
       rows.push({ name: 'GitHub Actions', level, detail });
     } catch (e) {
       rows.push({ name: 'GitHub Actions', level: 'warn', detail: '조회 실패' });
