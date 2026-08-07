@@ -1,0 +1,43 @@
+name: tests
+
+# The repo shipped 156 tests that nothing ever ran. Two real defects survived
+# into main because of it: a helper that was never wired up, and a test still
+# calling a signature that had changed months earlier. Both would have been
+# caught here at review time.
+#
+# Public repo, so Actions minutes are free — there is no reason not to.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer commit supersedes an older one on the same branch; no value in
+# finishing a run for code that has already been replaced.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # The same install the watcher does, so a dependency that breaks the
+      # real run breaks this too rather than passing against a lighter set.
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
