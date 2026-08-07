@@ -97,3 +97,39 @@ def test_no_pending_is_noop():
     main._resolve_pending_reservations(
         FakeProvider(), [_watch()], s, "2026-08-01T02:30:00Z")
     assert s["auto_reserve_disabled"] == ["w1"]
+
+
+class TestPaidCancelsReminders:
+    """The paid branch must also silence queued payment reminders.
+
+    This call was documented as the backstop to the in-message "결제 완료 —
+    알림 중지" link but was missing from the merged code: the function and its
+    unit tests existed, nothing ever called it. Pin the wiring, not just the
+    function.
+    """
+
+    def test_paid_reservation_cancels_its_reminders(self, monkeypatch):
+        cancelled = []
+        monkeypatch.setattr(main.notifier, "cancel_reminders", cancelled.append)
+        main._resolve_pending_reservations(
+            FakeProvider(paid=["R1"]), [_watch()], _state(), "2026-08-01T02:30:00Z")
+        assert cancelled == ["R1"]
+
+    def test_unpaid_expiry_does_not_cancel(self, monkeypatch):
+        # The hold lapsed and auto-reserve re-arms; there is nothing paid to
+        # stop reminding about, and the reminders expire on their own.
+        cancelled = []
+        monkeypatch.setattr(main.notifier, "cancel_reminders", cancelled.append)
+        main._resolve_pending_reservations(
+            FakeProvider(), [_watch()], _state(), "2026-08-01T02:30:00Z")
+        assert cancelled == []
+
+    def test_cancel_failure_never_breaks_the_poll(self, monkeypatch):
+        # Tidy-up must not take down a run that already did its job.
+        def boom(_):
+            raise RuntimeError("worker down")
+        monkeypatch.setattr(main.notifier, "cancel_reminders", boom)
+        s = _state()
+        main._resolve_pending_reservations(
+            FakeProvider(paid=["R1"]), [_watch()], s, "2026-08-01T02:30:00Z")
+        assert "w1" not in s.get("pending_reservations", {})

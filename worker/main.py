@@ -254,6 +254,15 @@ def _resolve_pending_reservations(
             log.info("[%s] watch %s: reservation %s paid — auto-reserve stays off",
                      provider.name, watch.id, rsv_id)
             state_mod.clear_pending_reservation(state, watch.id)
+            # Backstop to the "결제 완료 — 알림 중지" link in the message: if the
+            # user paid without tapping it, silence whatever reminders are still
+            # queued. The link is the fast path; this only catches stragglers on
+            # the next poll, so it must never take down a run that already did
+            # its job.
+            try:
+                notifier.cancel_reminders(rsv_id)
+            except Exception as e:
+                log.exception("리마인더 취소 실패: %s", e)
             continue
         deadline = _parse_dt(rec.get("deadline"))
         if deadline is None or now_dt is None:
