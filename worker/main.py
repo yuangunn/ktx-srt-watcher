@@ -114,6 +114,9 @@ def run_watches(
     renotify = bool(settings_pre.get("renotify_while_available", False))
     quiet_start = settings_pre.get("quiet_hours_start") or None
     quiet_end = settings_pre.get("quiet_hours_end") or None
+    # Default off: a broken login is not actionable until morning, so it goes
+    # to Telegram only unless the user asks for it loud.
+    login_push = bool(settings_pre.get("login_alert_pushover", False))
     is_manual_pre = event_name == "workflow_dispatch"
     # "push" stays in the automated set for safety: config no longer lives in
     # git so saving settings makes no commit at all, but any future push-driven
@@ -163,14 +166,14 @@ def run_watches(
             log.exception("[%s] login failed: %s", provider_name, e)
             if state_mod.record_login_failure(state, provider_name, now_iso):
                 try:
-                    notifier.notify_login_failed(provider_name, str(e))
+                    notifier.notify_login_failed(provider_name, str(e), push=login_push)
                 except Exception as nfx:
                     log.exception("login-failure notify itself failed: %s", nfx)
             continue
         if state_mod.clear_login_failure(state, provider_name):
             log.info("[%s] login recovered", provider_name)
             try:
-                notifier.notify_login_recovered(provider_name)
+                notifier.notify_login_recovered(provider_name, push=login_push)
             except Exception as nfx:
                 log.exception("login-recovery notify itself failed: %s", nfx)
         # Settle holds placed on earlier runs before hunting again: a hold that
