@@ -2,7 +2,7 @@
 // Data (watch list / poll state) always goes to the network — it lives in
 // the CF Worker's KV and must never be served from cache.
 
-const VERSION = 'v38';
+const VERSION = 'v39';
 const SHELL = [
   './',
   './index.html',

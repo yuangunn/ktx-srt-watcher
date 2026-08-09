@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-import random
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Callable
 
 from . import notifier
@@ -19,10 +16,8 @@ from .adapters.srt import SRTProvider
 from .matcher import find_new_trains
 from .models import Reservation, Train, Watch
 from .throttle import (
-    MIN_POLL_INTERVAL_MIN,
     should_throttle as _should_throttle,
     set_next_poll as _set_next_poll,
-    roll_interval_min as _roll_interval_min,
     parse_dt as _parse_dt,
 )
 

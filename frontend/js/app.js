@@ -247,19 +247,6 @@ class GitHub {
     const content = json.content ? decodeUtf8(atob(json.content.replace(/\n/g, ''))) : '';
     return { sha: json.sha, content };
   }
-  async putFile(path, { content, sha, message }) {
-    const body = {
-      message,
-      content: btoa(encodeUtf8(content)),
-      ...(sha ? { sha } : {}),
-    };
-    const res = await fetch(`https://api.github.com/repos/${this.repo}/contents/${path}`, {
-      method: 'PUT', headers: { ...this._headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`PUT ${path} → ${res.status} ${await res.text()}`);
-    return res.json();
-  }
   async pingAuth() {
     const res = await fetch(`https://api.github.com/repos/${this.repo}`, { headers: this._headers() });
     if (!res.ok) throw new Error(`auth check → ${res.status}`);
@@ -332,7 +319,6 @@ class GitHub {
   }
 }
 
-function encodeUtf8(s) { return new TextEncoder().encode(s).reduce((a, b) => a + String.fromCharCode(b), ''); }
 function decodeUtf8(s) {
   const bytes = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
@@ -613,24 +599,6 @@ function renderWatchCard(watch, state) {
 function renderEmpty(onAdd) {
   const node = tpl('tpl-empty');
   node.querySelector('#empty-add').addEventListener('click', onAdd);
-  return node;
-}
-
-function renderRunRow(run, onOpen) {
-  const node = tpl('tpl-run-row').firstElementChild;
-  const concl = run.conclusion || (run.status === 'completed' ? '' : 'in_progress');
-  node.querySelector('.run-row__status').dataset.conclusion = concl;
-  node.querySelector('.run-row__time').textContent = fmtRunTime(run.started);
-  const event = EVENT_LABELS[run.event] || run.event || '';
-  const dur = run.status === 'completed' ? fmtDuration(run.started, run.finished) : '진행 중';
-  const status = run.conclusion || run.status || '—';
-  node.querySelector('.run-row__meta').textContent = `${event} · ${dur} · ${status}`;
-  node.querySelector('.run-row__link').href = run.url;
-  node.dataset.runId = run.id;
-  node.addEventListener('click', e => {
-    if (e.target.closest('.run-row__link')) return;
-    onOpen(run);
-  });
   return node;
 }
 

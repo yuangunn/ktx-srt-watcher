@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from worker.matcher import find_new_trains
-from worker.models import Passengers, Train, Watch
+from worker.models import Train, Watch
 
 
 def _watch(**overrides) -> Watch:

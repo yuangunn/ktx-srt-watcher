@@ -4,7 +4,7 @@ Regression guard for the overnight failure mode — reserve succeeds at 02:00,
 the 20-min payment window passes while the user sleeps, the seat is released,
 and auto-reserve must NOT stay disabled.
 """
-from worker import main, state as state_mod
+from worker import main
 from worker.models import Watch
 
 
