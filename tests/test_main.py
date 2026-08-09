@@ -119,7 +119,7 @@ class TestRunWatches:
         cfg = {"version": 1, "watches": [_watch_dict(id="a", provider="korail")]}
         korail = FakeProvider("korail")
         srt = FakeProvider("srt")
-        s = state_mod._default()
+        s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": korail, "srt": srt},
@@ -139,7 +139,7 @@ class TestRunWatches:
             ],
         }
         korail = FakeProvider("korail")
-        s = state_mod._default()
+        s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": korail, "srt": FakeProvider("srt")},
@@ -160,7 +160,7 @@ class TestRunWatches:
         }
         korail = FakeProvider("korail")
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -173,7 +173,7 @@ class TestRunWatches:
         cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         recorder = NotifyRecorder()
-        s = state_mod._default()
+        s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": korail, "srt": FakeProvider("srt")},
@@ -220,7 +220,7 @@ class TestRunWatches:
         korail = FakeProvider("korail", search_results=search_results)
         recorder = NotifyRecorder()
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=recorder,
@@ -245,7 +245,7 @@ class TestRunWatches:
         srt = FakeProvider("srt", search_results=[_train(provider="srt", raw_id="srt-rid", train_type="SRT")])
         recorder = NotifyRecorder()
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail_fail, "srt": srt},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=recorder,
@@ -255,7 +255,7 @@ class TestRunWatches:
 
     def test_marks_last_run(self):
         cfg = {"version": 1, "watches": []}
-        s = state_mod._default()
+        s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": FakeProvider("korail"), "srt": FakeProvider("srt")},
@@ -267,7 +267,7 @@ class TestRunWatches:
 
     def test_records_watch_date_for_pruning(self):
         cfg = {"version": 1, "watches": [_watch_dict(id="w", date="2026-05-15")]}
-        s = state_mod._default()
+        s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": FakeProvider("korail"), "srt": FakeProvider("srt")},
@@ -284,7 +284,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list[list[Watch]] = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -300,7 +300,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -315,7 +315,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -330,7 +330,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         # No summary fn passed — should not raise
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -347,7 +347,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -366,7 +366,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -381,7 +381,7 @@ class TestManualTriggerSummary:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -445,7 +445,7 @@ class TestMultiTrainFallback:
         )
         success_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -475,7 +475,7 @@ class TestMultiTrainFallback:
         success_calls: list = []
         failure_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -507,7 +507,7 @@ class TestMultiTrainFallback:
         )
         failure_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -531,7 +531,7 @@ class TestMultiTrainFallback:
             search_results=[_train(raw_id="r1")],
         )
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -545,7 +545,7 @@ class TestMultiTrainFallback:
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -572,7 +572,7 @@ class TestQuietHoursPropagation:
         rec = Recorder()
         # UTC 17:00 = KST 02:00 (inside the quiet window)
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=rec,
@@ -596,7 +596,7 @@ class TestQuietHoursPropagation:
         rec = Recorder()
         # UTC 03:00 = KST 12:00 (outside the window)
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=rec,
@@ -620,7 +620,7 @@ class TestQuietHoursPropagation:
         rec = Recorder()
         # Inside the quiet window, but workflow_dispatch should override
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": FakeProvider("korail", search_results=[_train(raw_id="r1")]), "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=rec,
@@ -784,7 +784,7 @@ class TestAlreadyExistedReservation:
         success_calls: list = []
         failure_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -812,7 +812,7 @@ class TestAlreadyExistedReservation:
         )
         success_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -837,7 +837,7 @@ class TestScheduleReminders:
         )
         sched_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -862,7 +862,7 @@ class TestScheduleReminders:
         )
         sched_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -886,7 +886,7 @@ class TestScheduleReminders:
         sched_calls: list = []
         success_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -916,7 +916,7 @@ class TestScheduleReminders:
 
         # Should not raise — failure is logged and swallowed
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -934,7 +934,7 @@ class TestScheduleReminders:
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -953,7 +953,7 @@ class TestScheduleReminders:
         korail = FakeProvider("korail", search_results=[])
         summary_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -969,7 +969,7 @@ class TestAutoReserve:
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=False)]}
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -984,7 +984,7 @@ class TestAutoReserve:
         korail = FakeProvider("korail", search_results=[t1, t2])
         success_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -999,7 +999,7 @@ class TestAutoReserve:
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
         korail = FakeProvider("korail", search_results=[])
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -1030,7 +1030,7 @@ class TestAutoReserve:
         success_calls: list = []
         failure_calls: list = []
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),
@@ -1049,7 +1049,7 @@ class TestAutoReserve:
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True, passengers={"adult": 2, "child": 1, "senior": 0})]}
         korail = FakeProvider("korail", search_results=[_train(raw_id="r1")])
         main.run_watches(
-            cfg, state_mod._default(),
+            cfg, state_mod.empty_state(),
             providers={"korail": korail, "srt": FakeProvider("srt")},
             creds={"korail": ("u", "p"), "srt": ("u", "p")},
             notify_fn=NotifyRecorder(),

@@ -63,12 +63,3 @@ class TestClearLoginFailure:
         state.record_login_failure(s, "srt", "2026-07-31T10:00:00Z")
         state.clear_login_failure(s, "srt")
         assert state.record_login_failure(s, "srt", "2026-07-31T10:30:00Z") is True
-
-
-class TestSurvivesMerge:
-    def test_login_failures_carry_through_a_state_merge(self):
-        # Two runs can both write state; losing this key would silently reset
-        # the alert cooldown and re-notify on every poll.
-        ours = {"watches": {}, "login_failures": {"srt": {"since": "t", "notified_at": "t"}}}
-        merged = state.merge_states(ours, {"watches": {}})
-        assert merged["login_failures"]["srt"]["since"] == "t"

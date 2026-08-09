@@ -55,8 +55,10 @@ class Provider(Protocol):
 config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌석만 반환 (state의 `notified_train_ids`와 비교).
 
 ### `worker/state.py`
-- 읽기/쓰기 + atomic write (tmp → rename)
-- `last_run`, `watches[id].last_check`, `watches[id].notified_train_ids` 갱신
+- 메모리상의 state dict를 다루는 순수 헬퍼만. 파일을 만지지 않는다 —
+  실제 읽기/쓰기는 `remote.py`가 CF KV로 한다
+- `last_run`, `watches[id].last_check`, `watches[id].notified_train_ids`,
+  `pending_reservations`, `login_failures` 갱신
 
 ### `worker/pushover.py`
 무음/방해금지를 뚫어야 하는 알림 전용. iOS는 Apple의 Critical Alerts 권한이
