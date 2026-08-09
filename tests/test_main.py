@@ -1062,12 +1062,21 @@ class TestAutoReserve:
 
 
 class TestLoadConfig:
-    def test_loads_valid_config(self, tmp_path: Path):
-        path = tmp_path / "config.json"
-        path.write_text(json.dumps({"version": 1, "watches": [_watch_dict()]}), encoding="utf-8")
-        cfg = main.load_config(path)
+    def test_reads_the_watch_list_from_cf_kv(self, monkeypatch):
+        # config.json left the repo when state moved to CF KV, so load_config
+        # takes no path any more — it delegates to remote.fetch_config.
+        monkeypatch.setattr(
+            main.remote, "fetch_config",
+            lambda: {"version": 1, "watches": [_watch_dict()]},
+        )
+        cfg = main.load_config()
         assert cfg["version"] == 1
         assert len(cfg["watches"]) == 1
+
+    def test_passes_through_none_when_nothing_is_stored(self, monkeypatch):
+        # A fresh install with no watches is a normal state, not a failure.
+        monkeypatch.setattr(main.remote, "fetch_config", lambda: None)
+        assert main.load_config() is None
 
 
 class TestLoadCredentials:
