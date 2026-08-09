@@ -3,7 +3,7 @@ still succeeds and last_run still advances, so nothing else notices. These pin
 the alert-once / recover / re-alert-daily behaviour."""
 from __future__ import annotations
 
-from worker import state
+from worker import notifier, state
 
 
 class TestRecordLoginFailure:
@@ -63,3 +63,49 @@ class TestClearLoginFailure:
         state.record_login_failure(s, "srt", "2026-07-31T10:00:00Z")
         state.clear_login_failure(s, "srt")
         assert state.record_login_failure(s, "srt", "2026-07-31T10:30:00Z") is True
+
+
+class TestPushoverIsOptIn:
+    """Pushover priority 1 bypasses its own quiet hours, so a login that broke
+    at 3am used to wake the user for something they cannot fix until morning.
+    Telegram always; Pushover only when asked for."""
+
+    def _sent(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(notifier.pushover, "send",
+                            lambda *a, **kw: calls.append((a, kw)))
+        monkeypatch.setattr(notifier, "send_telegram", lambda *a, **kw: None)
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "c")
+        return calls
+
+    def test_failure_is_telegram_only_by_default(self, monkeypatch):
+        calls = self._sent(monkeypatch)
+        notifier.notify_login_failed("korail", "bad password")
+        assert calls == []
+
+    def test_recovery_is_telegram_only_by_default(self, monkeypatch):
+        calls = self._sent(monkeypatch)
+        notifier.notify_login_recovered("korail")
+        assert calls == []
+
+    def test_failure_pushes_when_opted_in(self, monkeypatch):
+        calls = self._sent(monkeypatch)
+        notifier.notify_login_failed("korail", "bad password", push=True)
+        assert len(calls) == 1
+        # High, never emergency: no repeat-until-acknowledged for a password.
+        assert calls[0][1]["priority"] == notifier.pushover.PRIORITY_HIGH
+
+    def test_recovery_pushes_when_opted_in(self, monkeypatch):
+        calls = self._sent(monkeypatch)
+        notifier.notify_login_recovered("korail", push=True)
+        assert len(calls) == 1
+
+    def test_telegram_still_goes_out_with_push_off(self, monkeypatch):
+        self._sent(monkeypatch)
+        sent = []
+        monkeypatch.setattr(notifier, "send_telegram",
+                            lambda tok, cid, text, **kw: sent.append(text))
+        notifier.notify_login_failed("srt", "locked")
+        assert len(sent) == 1
+        assert "SRT 로그인 실패" in sent[0]

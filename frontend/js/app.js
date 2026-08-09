@@ -999,6 +999,8 @@ class App {
     if (wait) wait.checked = !!s.allow_waiting_list;
     const renotify = $('#renotify-toggle');
     if (renotify) renotify.checked = !!s.renotify_while_available;
+    const loginPush = $('#login-push-toggle');
+    if (loginPush) loginPush.checked = !!s.login_alert_pushover;
     this._renderPollConfig(s);
     const qs = $('#quiet-start');
     const qe = $('#quiet-end');
@@ -1332,6 +1334,13 @@ class App {
       renotify.addEventListener('change', async () => {
         ensure().renotify_while_available = renotify.checked;
         await this._save(`settings: renotify_while_available = ${renotify.checked}`);
+      });
+    }
+    const loginPush = $('#login-push-toggle');
+    if (loginPush) {
+      loginPush.addEventListener('change', async () => {
+        ensure().login_alert_pushover = loginPush.checked;
+        await this._save(`settings: login_alert_pushover = ${loginPush.checked}`);
       });
     }
     // Poll interval: mode (fixed/range/choices) + per-mode inputs.

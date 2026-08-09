@@ -276,18 +276,29 @@ def format_login_failed(provider: str, error_msg: str) -> str:
 
 
 def notify_login_failed(
-    provider: str, error_msg: str, *, session: _PostSession | None = None,
+    provider: str, error_msg: str, *, push: bool = False,
+    session: _PostSession | None = None,
 ) -> None:
+    """Telegram always; Pushover only when the user opted in.
+
+    Pushover is off by default here even though it is on for seats. Pushover
+    priority 1 bypasses its own quiet hours, so a login that broke at 3am woke
+    the user for something they cannot act on until morning — the password is
+    not going to change itself, and the watcher will re-alert every 24h until
+    it is fixed. Waking someone for a non-actionable alert is how they learn to
+    swipe the whole channel away, which is exactly the channel that has to work
+    when a seat appears.
+    """
     text = format_login_failed(provider, error_msg)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if bot_token and chat_id:
         send_telegram(bot_token, chat_id, text, session=session)
-    # High, not emergency: there is nothing to do about it at 3am, and a
-    # repeat-until-acknowledged alarm for a broken password would train the
-    # user to ignore the channel that has to work when a seat appears.
-    pushover.send(f"🚨 {PROVIDER_LABEL.get(provider, provider)} 로그인 실패",
-                  text, priority=pushover.PRIORITY_HIGH)
+    if push:
+        # High, never emergency: even opted in, a broken password does not get
+        # a repeat-until-acknowledged alarm.
+        pushover.send(f"🚨 {PROVIDER_LABEL.get(provider, provider)} 로그인 실패",
+                      text, priority=pushover.PRIORITY_HIGH)
 
 
 def format_login_recovered(provider: str) -> str:
@@ -296,14 +307,17 @@ def format_login_recovered(provider: str) -> str:
 
 
 def notify_login_recovered(
-    provider: str, *, session: _PostSession | None = None,
+    provider: str, *, push: bool = False, session: _PostSession | None = None,
 ) -> None:
+    """Same opt-in as the failure alert. Good news least of all deserves to
+    bypass quiet hours."""
     text = format_login_recovered(provider)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if bot_token and chat_id:
         send_telegram(bot_token, chat_id, text, session=session)
-    pushover.send("✅ 로그인 복구", text, priority=pushover.PRIORITY_HIGH)
+    if push:
+        pushover.send("✅ 로그인 복구", text, priority=pushover.PRIORITY_HIGH)
 
 
 def _fmt_deadline(iso: str | None) -> str:

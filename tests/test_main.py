@@ -251,6 +251,39 @@ class TestRunWatches:
         )
         assert [c[0].id for c in recorder.calls] == ["srt-only"]
 
+    def _run_with_broken_login(self, monkeypatch, settings):
+        """Run one poll whose only provider fails to log in, capturing the
+        push flag the notifier was asked for."""
+        seen = {}
+        monkeypatch.setattr(
+            main.notifier, "notify_login_failed",
+            lambda provider, err, **kw: seen.update(kw),
+        )
+        broken = FakeProvider("korail")
+
+        def boom_login(*a, **kw):
+            raise RuntimeError("auth failed")
+
+        broken.login = boom_login  # type: ignore
+        main.run_watches(
+            {"version": 1, "settings": settings, "watches": [_watch_dict(provider="korail")]},
+            state_mod.empty_state(),
+            providers={"korail": broken},
+            creds={"korail": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="2026-08-07T03:00:00Z",
+        )
+        return seen
+
+    def test_login_failure_does_not_push_by_default(self, monkeypatch):
+        # The 3am wake-up: a broken password cannot be fixed until morning, so
+        # it must not reach the channel that bypasses quiet hours.
+        assert self._run_with_broken_login(monkeypatch, {}) == {"push": False}
+
+    def test_login_failure_pushes_when_the_setting_is_on(self, monkeypatch):
+        seen = self._run_with_broken_login(monkeypatch, {"login_alert_pushover": True})
+        assert seen == {"push": True}
+
     def test_marks_last_run(self):
         cfg = {"version": 1, "watches": []}
         s = state_mod.empty_state()
