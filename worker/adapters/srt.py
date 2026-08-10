@@ -4,7 +4,12 @@ from datetime import datetime, timedelta, timezone
 
 from SRT import SRT, Adult, Child, SeatType, Senior, SRTNotLoggedInError, SRTResponseError
 
+import logging
+
 from ..models import Passengers, Reservation, Train, Watch
+from .base import journey_key
+
+log = logging.getLogger("ticket_watcher")
 
 SRAIL_BOOKING = "https://etk.srail.kr"
 RESERVATION_HOLD_MIN = 20
@@ -118,20 +123,31 @@ class SRTProvider:
             is_standby=is_standby,
         )
 
-    def paid_reservation_ids(self) -> set[str]:
-        """Paid reservations only — SRT exposes a paid_only filter directly."""
+    def paid_reservation_keys(self) -> set[str] | None:
+        """Paid reservations only — SRT exposes a paid_only filter directly.
+
+        Unlike Korail, SRT keeps the PNR (reservation_number) on the paid
+        record, so the id we stored at reserve() time does match. The journey
+        key goes in as well so a hold placed before that field existed — or one
+        whose PNR changed on re-issue — is still recognised.
+        """
         if self._client is None:
-            return set()
-        ids: set[str] = set()
+            return None
+        keys: set[str] = set()
         try:
             for r in self._client.get_reservations(paid_only=True) or []:
                 v = getattr(r, "reservation_number", None)
                 if v:
-                    ids.add(str(v))
-        except Exception:
-            # Lookup unavailable → treat as "unknown", never as "paid".
-            return set()
-        return ids
+                    keys.add(str(v))
+                key = journey_key(
+                    getattr(r, "train_number", None), getattr(r, "dep_date", None),
+                )
+                if key:
+                    keys.add(key)
+        except Exception as e:
+            log.warning("SRT 결제 내역 조회 실패 — 결제 여부 판단 불가: %s", e)
+            return None
+        return keys
 
 
 def _is_soldout_error(e: Exception) -> bool:

@@ -14,7 +14,12 @@ from korail2 import (
     SoldOutError,
 )
 
+import logging
+
 from ..models import Passengers, Reservation, Train, Watch
+from .base import journey_key
+
+log = logging.getLogger("ticket_watcher")
 
 LETSKORAIL_BOOKING = "https://www.letskorail.com"
 RESERVATION_HOLD_MIN = 20
@@ -134,22 +139,33 @@ class KorailProvider:
             is_standby=is_standby,
         )
 
-    def paid_reservation_ids(self) -> set[str]:
-        """Ticketed (paid) reservations. korail2.tickets() lists issued tickets;
-        anything still sitting in reservations() is an unpaid hold."""
+    def paid_reservation_keys(self) -> set[str] | None:
+        """Issued (paid) tickets, keyed by journey.
+
+        korail2's Ticket subclasses Train and carries no PNR — no rsv_id, no
+        ticket number. The id we hold from reserve() is Reservation.rsv_id
+        (h_pnr_no), which therefore can never appear here. Matching on it made
+        every paid Korail seat look unpaid, so the hold was ruled expired and
+        auto-reserve re-armed and bought the seat a second time.
+
+        train_no + departure date is what both objects do share, and it answers
+        the question that actually matters: does the user already hold a ticket
+        on this train that day.
+        """
         if self._client is None:
-            return set()
-        ids: set[str] = set()
+            return None
+        keys: set[str] = set()
         try:
             for t in self._client.tickets() or []:
-                for attr in ("rsv_id", "ticket_no", "car_no"):
-                    v = getattr(t, attr, None)
-                    if v:
-                        ids.add(str(v))
-        except Exception:
-            # Lookup unavailable → treat as "unknown", never as "paid".
-            return set()
-        return ids
+                key = journey_key(
+                    getattr(t, "train_no", None), getattr(t, "dep_date", None),
+                )
+                if key:
+                    keys.add(key)
+        except Exception as e:
+            log.warning("코레일 발권 내역 조회 실패 — 결제 여부 판단 불가: %s", e)
+            return None
+        return keys
 
 
 def _korail_deadline_iso(rsv) -> str:

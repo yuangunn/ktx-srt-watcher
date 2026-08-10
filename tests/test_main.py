@@ -92,6 +92,11 @@ class FakeProvider:
             return self._reserve_result
         return Reservation(provider=self.name, reservation_id="FAKE", train_no=train.train_no)
 
+    def paid_reservation_keys(self) -> set[str]:
+        # Checked, nothing paid — distinct from None ("could not check"), which
+        # is what a fake missing this method would have looked like.
+        return set()
+
 
 class NotifyRecorder:
     def __init__(self) -> None:
@@ -489,6 +494,32 @@ class TestMultiTrainFallback:
         assert korail.reserve_calls[0][0].train_no == "045"
         assert success_calls[0][1].train_no == "045"
 
+    def test_hold_records_the_journey_so_the_paid_check_can_match_it(self):
+        # Korail's issued tickets carry no PNR, so the id stored here can never
+        # appear in the paid set. Without the journey the next poll rules the
+        # hold lapsed and books the seat a second time.
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(train_no="045", raw_id="r1")],
+            reserve_result=Reservation(
+                provider="korail", reservation_id="PNR1", train_no="045",
+                expires_at="2026-08-01T02:20:00Z",
+            ),
+        )
+        s = state_mod.empty_state()
+        main.run_watches(
+            cfg, s,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        rec = s["pending_reservations"]["w"]
+        assert rec["id"] == "PNR1"
+        assert rec["journey"] == "045|20260515"
+
     def test_falls_back_to_second_candidate_on_first_failure(self):
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
         ok = Reservation(provider="korail", reservation_id="ABC", train_no="047")
@@ -827,6 +858,34 @@ class TestAlreadyExistedReservation:
         assert success_calls == []
         assert failure_calls == []
         assert len(korail.reserve_calls) == 1
+
+    def test_already_existed_pauses_auto_reserve(self):
+        # "you already hold this" is the provider telling us the job is done.
+        # Staying armed meant re-firing a reserve call every poll that could
+        # only be rejected identically — pointless load and a bot-detection
+        # pattern.
+        cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
+        korail = FakeProvider(
+            "korail",
+            search_results=[_train(raw_id="r1")],
+            reserve_result=Reservation(
+                provider="korail", reservation_id="(기존)", train_no="045",
+                already_existed=True,
+            ),
+        )
+        s = state_mod.empty_state()
+        main.run_watches(
+            cfg, s,
+            providers={"korail": korail, "srt": FakeProvider("srt")},
+            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            notify_fn=NotifyRecorder(),
+            now_iso="t",
+            event_name="repository_dispatch",
+        )
+        assert state_mod.is_auto_reserve_disabled(s, "w") is True
+        # No pending record: we never learned this hold's deadline, and a
+        # guessed one is what re-books seats.
+        assert "w" not in s.get("pending_reservations", {})
 
     def test_normal_reservation_still_notifies_success(self):
         cfg = {"version": 1, "watches": [_watch_dict(id="w", auto_reserve=True)]}
