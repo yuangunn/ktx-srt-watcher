@@ -75,15 +75,21 @@ def enable_auto_reserve(state: dict[str, Any], watch_id: str) -> None:
 
 def set_pending_reservation(
     state: dict[str, Any], watch_id: str, reservation_id: str, deadline_iso: str | None,
+    journey: str = "",
 ) -> None:
     """Remember the hold we just placed so a later run can judge its outcome.
 
     Cleared when the reservation is confirmed paid (job done) or when the hold
     expires unpaid (auto-reserve re-arms).
+
+    `journey` is a train_no|YYYYMMDD key. The reservation id alone cannot
+    settle the question for Korail — its issued tickets carry no PNR — so the
+    journey is what the paid check actually matches on there.
     """
     state.setdefault("pending_reservations", {})[watch_id] = {
         "id": reservation_id,
         "deadline": deadline_iso,
+        "journey": journey,
     }
 
 

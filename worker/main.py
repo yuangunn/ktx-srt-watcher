@@ -10,7 +10,7 @@ from . import notifier
 from . import pushover
 from . import remote
 from . import state as state_mod
-from .adapters.base import Provider
+from .adapters.base import Provider, journey_key
 from .adapters.korail import KorailProvider
 from .adapters.srt import SRTProvider
 from .matcher import find_new_trains
@@ -36,6 +36,11 @@ MAX_RESERVE_CANDIDATES = 3
 # Grace period after a hold's payment deadline before we declare it lapsed and
 # re-arm auto-reserve. Covers clock skew and late payment propagation.
 RE_ARM_GRACE_MIN = 3
+
+# How long a hold we cannot judge is kept before being dropped from state.
+# Long enough that a transient outage never discards a live record, short
+# enough that stale entries do not pile up.
+STALE_HOLD_HOURS = 24
 
 
 def main() -> int:
@@ -238,17 +243,28 @@ def _resolve_pending_reservations(
     if not pending:
         return
     now_dt = _parse_dt(now_iso)
-    paid: set[str] = set()
+    paid: set[str] | None
     try:
-        paid = provider.paid_reservation_ids()
+        paid = provider.paid_reservation_keys()
     except Exception as e:  # never let this break the poll
         log.exception("[%s] paid-reservation lookup failed: %s", provider.name, e)
-        paid = set()
+        paid = None
+
+    if paid is None:
+        # Cannot tell paid from lapsed. Re-arming on a guess buys the user a
+        # second ticket for a seat they already own and paid for; leaving the
+        # hold alone costs at most one missed re-hunt, which the PWA shows as
+        # a paused watch and the user can re-arm themselves. Fail towards not
+        # spending money.
+        log.warning("[%s] 결제 여부를 확인할 수 없어 %d건의 예약 판정을 보류합니다",
+                    provider.name, len(pending))
+        return
 
     for watch in pending:
         rec = state_mod.get_pending_reservation(state, watch.id) or {}
         rsv_id = str(rec.get("id") or "")
-        if rsv_id and rsv_id in paid:
+        journey = str(rec.get("journey") or "")
+        if (rsv_id and rsv_id in paid) or (journey and journey in paid):
             log.info("[%s] watch %s: reservation %s paid — auto-reserve stays off",
                      provider.name, watch.id, rsv_id)
             state_mod.clear_pending_reservation(state, watch.id)
@@ -267,6 +283,17 @@ def _resolve_pending_reservations(
             continue  # standby / unknown deadline — leave the hold alone
         if now_dt <= deadline + timedelta(minutes=RE_ARM_GRACE_MIN):
             continue  # still payable
+        if not journey:
+            # Written before holds recorded a journey key, so the paid check
+            # above could not have matched it on Korail whatever the truth is.
+            # Same rule as an unavailable lookup: no evidence, no re-arm. Drop
+            # the record once it is long dead so state does not accumulate —
+            # auto-reserve stays off and the PWA shows the watch as paused.
+            if now_dt > deadline + timedelta(hours=STALE_HOLD_HOURS):
+                log.info("[%s] watch %s: dropping unverifiable legacy hold %s",
+                         provider.name, watch.id, rsv_id or "?")
+                state_mod.clear_pending_reservation(state, watch.id)
+            continue
         # Hold lapsed unpaid → the seat is back in the pool; hunt again.
         log.info("[%s] watch %s: hold %s expired unpaid — re-arming auto-reserve",
                  provider.name, watch.id, rsv_id or "?")
@@ -346,10 +373,18 @@ def _process_watch(
 
         if reservation is not None and chosen is not None:
             if reservation.already_existed:
+                # The provider itself said the user already holds this — the
+                # strongest evidence there is. Stop hunting: leaving
+                # auto-reserve armed meant every later poll fired another
+                # reserve call that could only be rejected the same way, which
+                # is both pointless and exactly the pattern bot detection looks
+                # for. No pending record: we never learned this hold's
+                # deadline, and guessing one is what re-books seats.
                 log.info(
-                    "[%s] watch %s: train %s already reserved — skipping notify",
+                    "[%s] watch %s: train %s already reserved — pausing auto-reserve",
                     provider.name, watch.id, chosen.train_no,
                 )
+                state_mod.disable_auto_reserve(state, watch.id)
             else:
                 kind = "standby" if reservation.is_standby else "reserved"
                 log.info(
@@ -373,6 +408,7 @@ def _process_watch(
                 state_mod.disable_auto_reserve(state, watch.id)
                 state_mod.set_pending_reservation(
                     state, watch.id, reservation.reservation_id, reservation.expires_at,
+                    journey=journey_key(chosen.train_no, chosen.date),
                 )
                 if notify_auto_reserve_disabled_fn is not None:
                     try:
