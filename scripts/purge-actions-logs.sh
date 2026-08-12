@@ -43,9 +43,26 @@ if [[ ! -s "$IDS_FILE" ]]; then
   echo "실행 목록을 가져오는 중… (2만 건 이상이면 몇 분 걸립니다)"
   # Snapshot once. Runs created after this point were produced by the redacted
   # code and have nothing to hide, so there is no need to chase a moving list.
-  gh api --paginate "/repos/$REPO/actions/runs?per_page=100" \
-    --jq '.workflow_runs[].id' > "$IDS_FILE" || {
-      echo "실행 목록 조회 실패" >&2; exit 1; }
+  # Write to a temp file and move it into place only once it has content: a
+  # half-finished or empty snapshot left at IDS_FILE would be silently reused
+  # by the next run, which is how "nothing to do" gets mistaken for success.
+  if ! gh api --paginate "/repos/$REPO/actions/runs?per_page=100" \
+       --jq '.workflow_runs[].id' > "$IDS_FILE.tmp" 2> "$WORK_DIR/fetch-err.txt"; then
+    echo "실행 목록 조회 실패:" >&2
+    sed 's/^/  /' "$WORK_DIR/fetch-err.txt" >&2
+    rm -f "$IDS_FILE.tmp"
+    exit 1
+  fi
+  if [[ ! -s "$IDS_FILE.tmp" ]]; then
+    echo "실행 목록이 비어 있습니다. gh는 성공했지만 ID를 하나도 못 받았습니다." >&2
+    echo "직접 확인해 보세요:" >&2
+    echo "  gh api '/repos/$REPO/actions/runs?per_page=1' --jq '.total_count'" >&2
+    [[ -s "$WORK_DIR/fetch-err.txt" ]] && { echo "gh stderr:" >&2; sed 's/^/  /' "$WORK_DIR/fetch-err.txt" >&2; }
+    rm -f "$IDS_FILE.tmp"
+    exit 1
+  fi
+  mv "$IDS_FILE.tmp" "$IDS_FILE"
+  echo "실행 $(wc -l < "$IDS_FILE" | tr -d ' ')건을 받았습니다."
 fi
 
 total=$(wc -l < "$IDS_FILE" | tr -d ' ')
