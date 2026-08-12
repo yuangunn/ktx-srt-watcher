@@ -14,3 +14,4 @@ dist/
 # watch ids embed routes and travel dates and this repo is public.
 config.json
 state.json
+.purge-actions-logs/
