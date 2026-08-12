@@ -1185,3 +1185,63 @@ class TestLoadCredentials:
         creds = main.load_credentials()
         assert creds["korail"] == ("", "")
         assert creds["srt"] == ("", "")
+
+
+class TestWatchIdIsNeverLogged:
+    """Actions logs on a public repo are readable by anyone, signed in or not.
+
+    A watch id is "부산-동탄-20260817-wpvm" — origin, destination, travel date.
+    Printing it publishes when the user's home is empty, which is the whole
+    thing moving config into CF KV was supposed to prevent. The logs kept
+    leaking it for months after that migration.
+    """
+
+    def test_handle_keeps_only_the_random_suffix(self):
+        assert main._wid("부산-동탄-20260817-wpvm") == "wpvm"
+
+    def test_handle_contains_no_part_of_the_route_or_date(self):
+        handle = main._wid("부산-동탄-20260817-wpvm")
+        for secret in ("부산", "동탄", "20260817", "2026"):
+            assert secret not in handle
+
+    def test_an_id_ending_in_a_date_falls_back_to_a_digest(self):
+        # Never return the trailing token when it is the date itself.
+        handle = main._wid("부산-동탄-20260817")
+        assert "20260817" not in handle
+        assert len(handle) == 8
+
+    def test_a_bare_id_falls_back_to_a_digest(self):
+        assert main._wid("서울행") != "서울행"
+
+    def test_handle_is_stable_so_log_lines_correlate(self):
+        assert main._wid("부산-동탄-20260817-wpvm") == main._wid("부산-동탄-20260817-wpvm")
+
+    def test_distinct_watches_get_distinct_handles(self):
+        assert main._wid("부산-동탄-20260817-wpvm") != main._wid("부산-동탄-20260817-a1b2")
+
+    def test_empty_id_does_not_blow_up(self):
+        assert main._wid("") == "?"
+
+    @pytest.mark.parametrize("found", [True, False], ids=["seats-found", "no-seats"])
+    def test_a_real_poll_never_prints_the_id(self, caplog, found):
+        # Both branches log a per-watch line, and the quiet one is what fills
+        # the run history — the leak in the screenshot was "no new seats".
+        cfg = {"version": 1, "watches": [_watch_dict(id="부산-동탄-20260817-wpvm")]}
+        korail = FakeProvider(
+            "korail", search_results=[_train(raw_id="r1")] if found else [],
+        )
+        with caplog.at_level("INFO", logger="ticket_watcher"):
+            main.run_watches(
+                cfg, state_mod.empty_state(),
+                providers={"korail": korail, "srt": FakeProvider("srt")},
+                creds={"korail": ("u", "p"), "srt": ("u", "p")},
+                notify_fn=NotifyRecorder(),
+                now_iso="t",
+                event_name="repository_dispatch",
+            )
+        # getMessage() already interpolates args; re-applying % breaks on
+        # messages whose args are consumed unevenly.
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert "watch wpvm" in logged          # the line was emitted at all
+        for secret in ("부산", "동탄", "20260817"):
+            assert secret not in logged
