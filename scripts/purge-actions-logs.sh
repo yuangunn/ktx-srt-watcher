@@ -49,18 +49,26 @@ if [[ ! -s "$IDS_FILE" ]]; then
 fi
 
 total=$(wc -l < "$IDS_FILE" | tr -d ' ')
-echo "대상 $total건, 완료 $(wc -l < "$DONE_FILE" | tr -d ' ')건부터 이어서 진행합니다."
+done_n=$(wc -l < "$DONE_FILE" | tr -d ' ')
+# Braces are load-bearing: bash on macOS treats the following Hangul byte as
+# part of the variable name, so "$total건" reads as an undefined variable and
+# set -u kills the script.
+echo "대상 ${total}건, 완료 ${done_n}건부터 이어서 진행합니다."
 
-# Load the done list into memory once. Grepping the file per id would be
-# quadratic — at 24k runs that is ~300M line comparisons of pure overhead.
-declare -A DONE=()
-while read -r d; do [[ -n "$d" ]] && DONE["$d"]=1; done < "$DONE_FILE"
+if [[ "$done_n" -ge "$total" && "$total" -gt 0 ]]; then
+  echo "이미 전부 처리했습니다. 다시 하려면 $WORK_DIR 를 지우세요."
+  exit 0
+fi
 
-deleted=0; missing=0; failed=0; n=0
+deleted=0; missing=0; failed=0; n=$done_n
+# Resume by offset rather than by lookup: done.txt gains exactly one line per
+# id, in ids-file order, and the ids file is snapshotted once — so the counts
+# line up. A per-id grep would be quadratic (~300M comparisons at 24k), and an
+# associative array is not an option: macOS ships bash 3.2, which has none.
+# Process substitution keeps the loop in this shell so the counters survive it.
 while read -r id; do
   [[ -z "$id" ]] && continue
   n=$((n + 1))
-  [[ -n "${DONE[$id]:-}" ]] && continue
 
   for attempt in 1 2 3; do
     # -i prints the status line; taking it from head -1 works whether or not
@@ -84,7 +92,7 @@ while read -r id; do
     echo "[$n/$total] 삭제 $deleted · 이미없음 $missing · 실패 $failed"
   fi
   sleep "$SLEEP_BETWEEN"
-done < "$IDS_FILE"
+done < <(tail -n +$((done_n + 1)) "$IDS_FILE")
 
 echo
 echo "완료: 삭제 $deleted · 이미없음 $missing · 실패 $failed (총 $total)"
