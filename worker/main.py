@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import sys
@@ -41,6 +42,27 @@ RE_ARM_GRACE_MIN = 3
 # Long enough that a transient outage never discards a live record, short
 # enough that stale entries do not pile up.
 STALE_HOLD_HOURS = 24
+
+
+def _wid(watch_id: str) -> str:
+    """A log handle for a watch — never the watch id itself.
+
+    Watch ids read like "부산-동탄-20260817-wpvm": origin, destination and
+    travel date in the clear. Actions logs on a public repo are readable by
+    anyone without signing in, so printing the id publishes exactly what moving
+    config out of git into CF KV was meant to hide — when the user's home is
+    empty.
+
+    The trailing random token is enough to line a log line up with the app and
+    discloses nothing by itself. Ids in another shape fall back to a digest.
+    """
+    wid = (watch_id or "").strip()
+    if not wid:
+        return "?"
+    tail = wid.rsplit("-", 1)[-1]
+    if tail != wid and tail.isalnum() and not tail.isdigit():
+        return tail
+    return hashlib.sha256(wid.encode("utf-8")).hexdigest()[:8]
 
 
 def main() -> int:
@@ -200,7 +222,7 @@ def run_watches(
                     renotify=renotify,
                 )
             except Exception as e:
-                log.exception("[%s] watch %s failed: %s", provider_name, watch.id, e)
+                log.exception("[%s] watch %s failed: %s", provider_name, _wid(watch.id), e)
 
     # Record this *actual* poll (skip runs returned earlier, so they're never
     # counted). PWA stats read poll_history instead of GHA run counts.
@@ -266,7 +288,7 @@ def _resolve_pending_reservations(
         journey = str(rec.get("journey") or "")
         if (rsv_id and rsv_id in paid) or (journey and journey in paid):
             log.info("[%s] watch %s: reservation %s paid — auto-reserve stays off",
-                     provider.name, watch.id, rsv_id)
+                     provider.name, _wid(watch.id), rsv_id)
             state_mod.clear_pending_reservation(state, watch.id)
             # Backstop to the "결제 완료 — 알림 중지" link in the message: if the
             # user paid without tapping it, silence whatever reminders are still
@@ -291,12 +313,12 @@ def _resolve_pending_reservations(
             # auto-reserve stays off and the PWA shows the watch as paused.
             if now_dt > deadline + timedelta(hours=STALE_HOLD_HOURS):
                 log.info("[%s] watch %s: dropping unverifiable legacy hold %s",
-                         provider.name, watch.id, rsv_id or "?")
+                         provider.name, _wid(watch.id), rsv_id or "?")
                 state_mod.clear_pending_reservation(state, watch.id)
             continue
         # Hold lapsed unpaid → the seat is back in the pool; hunt again.
         log.info("[%s] watch %s: hold %s expired unpaid — re-arming auto-reserve",
-                 provider.name, watch.id, rsv_id or "?")
+                 provider.name, _wid(watch.id), rsv_id or "?")
         state_mod.clear_pending_reservation(state, watch.id)
         state_mod.enable_auto_reserve(state, watch.id)
         if notify_rearmed_fn is not None:
@@ -332,10 +354,10 @@ def _process_watch(
     new_trains = find_new_trains(watch, trains, notified, renotify=renotify)
 
     if not new_trains:
-        log.info("[%s] watch %s: no new seats (%d searched)", provider.name, watch.id, len(trains))
+        log.info("[%s] watch %s: no new seats (%d searched)", provider.name, _wid(watch.id), len(trains))
         return 0
 
-    log.info("[%s] watch %s: %d seat(s)%s", provider.name, watch.id, len(new_trains),
+    log.info("[%s] watch %s: %d seat(s)%s", provider.name, _wid(watch.id), len(new_trains),
              " (renotify)" if renotify else " new")
     try:
         notify_fn(watch, new_trains, silent=silent)
@@ -368,7 +390,7 @@ def _process_watch(
                 last_err = (candidate, e)
                 log.info(
                     "[%s] watch %s: reserve %s failed (%s); trying next candidate",
-                    provider.name, watch.id, candidate.train_no, e,
+                    provider.name, _wid(watch.id), candidate.train_no, e,
                 )
 
         if reservation is not None and chosen is not None:
@@ -382,14 +404,14 @@ def _process_watch(
                 # deadline, and guessing one is what re-books seats.
                 log.info(
                     "[%s] watch %s: train %s already reserved — pausing auto-reserve",
-                    provider.name, watch.id, chosen.train_no,
+                    provider.name, _wid(watch.id), chosen.train_no,
                 )
                 state_mod.disable_auto_reserve(state, watch.id)
             else:
                 kind = "standby" if reservation.is_standby else "reserved"
                 log.info(
                     "[%s] watch %s: %s %s (id=%s)",
-                    provider.name, watch.id, kind, chosen.train_no, reservation.reservation_id,
+                    provider.name, _wid(watch.id), kind, chosen.train_no, reservation.reservation_id,
                 )
                 if notify_reserve_success_fn is not None:
                     notify_reserve_success_fn(watch, chosen, reservation)
@@ -419,7 +441,7 @@ def _process_watch(
             target, err = last_err
             log.exception(
                 "[%s] watch %s: all %d reserve candidates failed; last error on %s: %s",
-                provider.name, watch.id, len(candidates), target.train_no, err,
+                provider.name, _wid(watch.id), len(candidates), target.train_no, err,
             )
             if notify_reserve_failure_fn is not None:
                 try:
