@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from korail2 import (
+from ..vendor.korail2 import (
     AdultPassenger,
     ChildPassenger,
     Korail,
