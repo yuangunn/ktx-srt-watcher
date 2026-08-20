@@ -43,12 +43,14 @@ class Provider(Protocol):
 `Watch`, `Train`, `Reservation`은 pydantic 모델로 `worker/models.py`에 정의.
 
 ### `worker/adapters/korail.py`
-- `korail2` 라이브러리 사용
+- `korail2` 라이브러리 사용 — **저장소 내 `worker/vendor/korail2`**. 설치하던
+  포크가 삭제돼 전체가 멈춘 적이 있어 소스를 들여왔다. 원본 0.4.0과
+  바이트 단위로 동일하며 `tests/test_vendor.py`가 체크섬으로 감시한다
 - `search()`는 `time_min~time_max` 범위, `train_types` 일치, **잔여석 1석 이상**인 열차만 반환
 - 로그인 세션은 함수 호출 단위. Actions 매 실행마다 새로 로그인
 
 ### `worker/adapters/srt.py`
-- `SRT` 라이브러리 사용 (PyPI: `SRT`)
+- `SRT` 라이브러리 사용 (PyPI: `SRTrain`). 활발히 유지보수 중이라 vendoring하지 않는다
 - 그 외 동일
 
 ### `worker/matcher.py`
@@ -109,7 +111,9 @@ CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
 ## 테스트
 - `tests/test_matcher.py`: mock adapter 결과로 신규 좌석 판별 로직
 - `tests/test_state.py`: atomic write, 동시성
-- adapter 통합 테스트는 수동 (실 계정 필요), CI에서 제외
+- `tests/test_vendor.py`: vendored korail2가 원본과 동일한지 체크섬 검증
+- `tests/test_adapters.py`: 어댑터 스모크. 이제 CI에서 함께 돈다 —
+  실 계정이 필요한 통합 테스트만 수동
 
 ## MVP 단계
 1. **Phase 1**: korail/srt adapter, matcher, notifier, state, workflow → 알림까지

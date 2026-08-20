@@ -1,8 +1,8 @@
-# PyPI, not a git fork. The pin used to be chasehuh/korail2@32c4321 — that
-# repository was deleted, which broke every poll at the pip install step:
-# git asks for credentials on a 404 and fails. PyPI releases cannot vanish
-# the same way. 0.4.0 is byte-identical to carpedm20/korail2 master.
-korail2==0.4.0
+# korail2 is not here: it lives in worker/vendor/korail2, because the fork we
+# used to install from was deleted and took the whole watcher down with it.
+# These are the libraries it needs at runtime — see worker/vendor/README.md.
+pycryptodome>=3.19.0   # korail2 encrypts the login password with AES
+six>=1.16.0            # korail2 uses six.with_metaclass
 SRTrain>=2.6.7
 requests>=2.31.0
 pydantic>=2.5.0
