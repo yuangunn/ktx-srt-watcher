@@ -1,4 +1,8 @@
-korail2 @ git+https://github.com/chasehuh/korail2.git@32c4321b9b0838e4d83084c87a9a721076e8a08a
+# PyPI, not a git fork. The pin used to be chasehuh/korail2@32c4321 — that
+# repository was deleted, which broke every poll at the pip install step:
+# git asks for credentials on a 404 and fails. PyPI releases cannot vanish
+# the same way. 0.4.0 is byte-identical to carpedm20/korail2 master.
+korail2==0.4.0
 SRTrain>=2.6.7
 requests>=2.31.0
 pydantic>=2.5.0
