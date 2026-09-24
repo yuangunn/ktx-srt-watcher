@@ -231,30 +231,57 @@ class TestRunWatches:
         )
         assert [c[0].id for c in recorder.calls] == ["ok"]
 
-    def test_continues_when_provider_login_fails(self):
-        cfg = {
-            "version": 1,
-            "watches": [
-                _watch_dict(id="korail-only", provider="korail"),
-                _watch_dict(id="srt-only", provider="srt", **{"from": "수서", "to": "부산", "train_types": ["SRT"]}),
-            ],
-        }
+    def test_login_failure_skips_the_provider_but_not_the_run(self):
+        cfg = {"version": 1, "watches": [_watch_dict(id="w")]}
         korail_fail = FakeProvider("korail")
 
         def boom_login(*a, **kw):
             raise RuntimeError("auth failed")
 
         korail_fail.login = boom_login  # type: ignore
-        srt = FakeProvider("srt", search_results=[_train(provider="srt", raw_id="srt-rid", train_type="SRT")])
         recorder = NotifyRecorder()
+        s = state_mod.empty_state()
         main.run_watches(
-            cfg, state_mod.empty_state(),
-            providers={"korail": korail_fail, "srt": srt},
-            creds={"korail": ("u", "p"), "srt": ("u", "p")},
+            cfg, s,
+            providers={"korail": korail_fail},
+            creds={"korail": ("u", "p")},
             notify_fn=recorder,
             now_iso="t",
         )
-        assert [c[0].id for c in recorder.calls] == ["srt-only"]
+        assert recorder.calls == []
+        assert s["last_run"] == "t"  # the run itself survived
+
+    def test_legacy_srt_watch_rides_the_korail_adapter(self):
+        # Saved before the 2026-09-01 merger. Its id must not change — dedup
+        # history, pending holds and auto-reserve flags are keyed on it — but
+        # it must be searched by the KORAIL adapter with the type its trains
+        # now carry, KTX-산천, because provider "srt" no longer exists.
+        cfg = {
+            "version": 1,
+            "watches": [_watch_dict(
+                id="수서-부산-legacy", provider="srt",
+                **{"from": "수서", "to": "부산", "train_types": ["SRT"]},
+            )],
+        }
+        korail = FakeProvider("korail", search_results=[
+            _train(train_type="KTX-산천", raw_id="r1"),
+        ])
+        recorder = NotifyRecorder()
+        s = state_mod.empty_state()
+        main.run_watches(
+            cfg, s,
+            providers={"korail": korail},
+            creds={"korail": ("u", "p")},
+            notify_fn=recorder,
+            now_iso="t",
+        )
+        assert len(korail.searches) == 1
+        searched = korail.searches[0]
+        assert searched.id == "수서-부산-legacy"          # identity preserved
+        assert searched.provider == "korail"              # adapter rerouted
+        assert searched.train_types == ["KTX-산천"]       # SRT → KTX-산천
+        assert [c[0].id for c in recorder.calls] == ["수서-부산-legacy"]
+        assert s["watches"]["수서-부산-legacy"]["notified_train_ids"] == ["r1"]
 
     def _run_with_broken_login(self, monkeypatch, settings):
         """Run one poll whose only provider fails to log in, capturing the
@@ -1170,21 +1197,19 @@ class TestLoadConfig:
 
 
 class TestLoadCredentials:
-    def test_reads_env_for_both_providers(self, monkeypatch):
+    def test_reads_korail_env(self, monkeypatch):
         monkeypatch.setenv("KORAIL_ID", "k_id")
         monkeypatch.setenv("KORAIL_PW", "k_pw")
-        monkeypatch.setenv("SRT_ID", "s_id")
-        monkeypatch.setenv("SRT_PW", "s_pw")
         creds = main.load_credentials()
         assert creds["korail"] == ("k_id", "k_pw")
-        assert creds["srt"] == ("s_id", "s_pw")
+        # SRT died with the 2026-09-01 merger; no credentials for it exist.
+        assert "srt" not in creds
 
     def test_returns_empty_tuple_when_creds_missing(self, monkeypatch):
-        for var in ("KORAIL_ID", "KORAIL_PW", "SRT_ID", "SRT_PW"):
+        for var in ("KORAIL_ID", "KORAIL_PW"):
             monkeypatch.delenv(var, raising=False)
         creds = main.load_credentials()
         assert creds["korail"] == ("", "")
-        assert creds["srt"] == ("", "")
 
 
 class TestWatchIdIsNeverLogged:

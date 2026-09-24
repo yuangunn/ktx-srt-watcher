@@ -13,7 +13,6 @@ from . import remote
 from . import state as state_mod
 from .adapters.base import Provider, journey_key
 from .adapters.korail import KorailProvider
-from .adapters.srt import SRTProvider
 from .matcher import find_new_trains
 from .models import Reservation, Train, Watch
 from .throttle import (
@@ -42,6 +41,24 @@ RE_ARM_GRACE_MIN = 3
 # Long enough that a transient outage never discards a live record, short
 # enough that stale entries do not pile up.
 STALE_HOLD_HOURS = 24
+
+
+def _merged_provider(w: dict[str, Any]) -> dict[str, Any]:
+    """Route pre-merger SRT watches through the KORAIL adapter, unchanged ids.
+
+    Since 2026-09-01 the SRT service does not exist: its trains run as
+    KTX-산천 and sell through KORAIL. A watch saved before that would
+    otherwise sit on a provider with no adapter — or worse, keep "watching"
+    an API that answers with nothing forever. The id stays as it is so
+    notified_train_ids, pending holds and auto-reserve flags all carry over.
+    """
+    if w.get("provider") != "srt":
+        return w
+    w = dict(w)
+    w["provider"] = "korail"
+    types = [("KTX-산천" if t == "SRT" else t) for t in (w.get("train_types") or [])]
+    w["train_types"] = list(dict.fromkeys(types)) or ["KTX-산천"]
+    return w
 
 
 def _wid(watch_id: str) -> str:
@@ -86,10 +103,11 @@ def main() -> int:
     # an urgent alert may override the mute switch.
     pushover.set_mode(remote.fetch_mode())
     creds = load_credentials()
-    providers: dict[str, Provider] = {
-        "korail": KorailProvider(),
-        "srt": SRTProvider(),
-    }
+    # One device identity across runs: a fresh random profile on every poll is
+    # what looks like a bot farm. Minted once, kept in state.
+    korail = KorailProvider(device_profile_id=s.get("korail_device_profile"))
+    s["korail_device_profile"] = korail.device_profile_id
+    providers: dict[str, Provider] = {"korail": korail}
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     run_watches(
         cfg, s,
@@ -106,6 +124,10 @@ def main() -> int:
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
     state_mod.prune_past_dates(s, today=now_iso[:10])
+    # Provider "srt" no longer runs, so nothing would ever clear its outage
+    # entries; drop them rather than leave a dead cooldown in state.
+    for bucket in ("login_failures", "search_failures"):
+        (s.get(bucket) or {}).pop("srt", None)
     state_mod.prune_orphan_flags(
         s, [w.get("id") for w in cfg.get("watches", []) if w.get("id")]
     )
@@ -171,7 +193,10 @@ def run_watches(
     state_mod.mark_run(state, now_iso)
     _set_next_poll(poll_mode, settings_pre, state, now_iso)
 
-    active = [Watch.model_validate(w) for w in config.get("watches", []) if w.get("active", True)]
+    active = [
+        Watch.model_validate(_merged_provider(w))
+        for w in config.get("watches", []) if w.get("active", True)
+    ]
     by_provider: dict[str, list[Watch]] = {}
     for w in active:
         by_provider.setdefault(w.provider, []).append(w)
@@ -547,9 +572,10 @@ def send_test_notification(channel: str = "all") -> int:
 
 
 def load_credentials() -> dict[str, tuple[str, str]]:
+    # SRT_ID/SRT_PW are gone with the service (2026-08-31); the secrets can be
+    # deleted from the repo whenever.
     return {
         "korail": (os.environ.get("KORAIL_ID", ""), os.environ.get("KORAIL_PW", "")),
-        "srt": (os.environ.get("SRT_ID", ""), os.environ.get("SRT_PW", "")),
     }
 
 
