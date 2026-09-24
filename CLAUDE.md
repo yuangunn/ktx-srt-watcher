@@ -16,6 +16,8 @@ PWA(GitHub Pages)에서 감시 조건을 추가/삭제.
                              config / state                   │
                                     ↑ */3 repository_dispatch  │
                               [Actions cron]                  │
+                          (self-hosted @집 — 코레일+가          │
+                           데이터센터 IP 차단, -8202)           │
                                     ↓                         │
                         worker/main.py (Python 3.11)          │
                           └─ adapters/korail.py (유일)         │
@@ -40,6 +42,13 @@ class Provider(Protocol):
     def reserve(self, train: Train) -> Reservation: ...  # auto_reserve=true 시만
 ```
 `Watch`, `Train`, `Reservation`은 pydantic 모델로 `worker/models.py`에 정의.
+
+### 폴링 위치 — 집의 self-hosted runner
+코레일+ 백엔드는 데이터센터/VPN IP 로그인을 차단한다(-8202). GitHub 호스팅
+러너(Azure)에서는 자격증명이 맞아도 로그인이 안 되므로, 폴링 잡은
+`runs-on: [self-hosted, korail-home]`으로 집 기기에서 돈다. CI·배포는 계속
+GitHub 호스팅. 설치·보안 수칙: `docs/SELF_HOSTED_RUNNER.md` — 특히
+**셀프 호스티드 잡에 `pull_request` 트리거 금지** (공개 저장소).
 
 ### `worker/adapters/korail.py` — 유일한 어댑터
 - 2026-09-01 코레일-SR 통합 이후 전 고속열차(구 SRT = KTX-산천 포함)가 코레일

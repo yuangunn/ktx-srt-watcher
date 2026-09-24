@@ -12,6 +12,11 @@ on:
         description: "Also run the live login+search probe"
         type: boolean
         default: false
+      runner:
+        description: "Where to run. 코레일+ blocks datacenter IPs, so live probes only tell the truth from korail-home."
+        type: choice
+        options: [korail-home, ubuntu-latest]
+        default: korail-home
 
 permissions:
   contents: read
@@ -22,16 +27,17 @@ concurrency:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner == 'korail-home' && fromJSON('["self-hosted","korail-home"]') || inputs.runner }}
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       - name: Inspect / install / probe
         env:
           PROBE: ${{ inputs.run_probe && '1' || '0' }}
           KORAIL_ID: ${{ secrets.KORAIL_ID }}
           KORAIL_PW: ${{ secrets.KORAIL_PW }}
-        run: python scripts/api_probe.py
+        # A venv because a self-hosted device's system python is often
+        # PEP 668 externally-managed and refuses bare pip installs.
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python scripts/api_probe.py
