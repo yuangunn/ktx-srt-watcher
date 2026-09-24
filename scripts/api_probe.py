@@ -1,14 +1,14 @@
-"""Diagnostic for the 코레일+ migration: inspect and live-test korail-mobile-api.
+"""Round 2: bake-off of 코레일+ client candidates, on the runner, one log.
 
-Runs on the Actions runner (the sandbox cannot clone external repos). Prints
-into a PUBLIC log, so the live probe reports counts and train-type names only
-and never touches the user's config — no route or date of theirs can leak.
+Public log discipline: counts, train-type names, method signatures and
+license names only. Generic probe routes (서울→부산, 수서→부산); the user's
+config is never read.
 
-Stages:
-  1. clone + print ground truth (packaging, license, README) — always
-  2. pip install + import — always
-  3. live login + generic searches (서울→부산, 수서→부산) — only with
-     PROBE=1 and KORAIL_ID/KORAIL_PW in the environment
+Candidates:
+  kma       yakisoba0728/korail-mobile-api — unlicensed, unpackaged source
+            drop; imported via sys.path, never redistributed
+  pykorail  devgyurak/pykorail
+  letskorail bsangmin/letskorail
 """
 from __future__ import annotations
 
@@ -17,68 +17,90 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-REPO = "https://github.com/yakisoba0728/korail-mobile-api"
-DEST = "/tmp/kma"
+PROBE = os.environ.get("PROBE") == "1"
+UID, PW = os.environ.get("KORAIL_ID"), os.environ.get("KORAIL_PW")
+DATE = (datetime.now() + timedelta(days=1)).strftime("%Y%m%d")
+ROUTES = (("서울", "부산"), ("수서", "부산"))
 
 
-def sh(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    print(f"$ {' '.join(cmd)}", flush=True)
-    return subprocess.run(cmd, text=True, **kw)
+def sh(cmd: str) -> None:
+    print(f"$ {cmd}", flush=True)
+    subprocess.run(cmd, shell=True, text=True)
 
 
-def stage1_inspect() -> None:
-    sh(["git", "clone", "--depth", "1", REPO, DEST], check=True)
-    head = subprocess.run(["git", "-C", DEST, "rev-parse", "HEAD"],
+def clone(repo: str, dest: str) -> None:
+    subprocess.run(["git", "clone", "--depth", "1", f"https://github.com/{repo}", dest],
+                   check=True, capture_output=True, text=True)
+    head = subprocess.run(["git", "-C", dest, "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
-    print(f"== HEAD == {head}")
-    sh(["ls", "-la", DEST])
-    print("== packaging/license files ==")
-    sh(["find", DEST, "-maxdepth", "3", "-iname", "pyproject.toml", "-o",
-        "-maxdepth", "3", "-iname", "setup.*", "-o", "-iname", "license*"])
-    print("== README (first 250 lines) ==")
-    sh(["sed", "-n", "1,250p", f"{DEST}/README.md"])
-    for p in ("pyproject.toml", "src/pyproject.toml", "setup.py"):
-        if os.path.exists(f"{DEST}/{p}"):
-            print(f"== {p} =="); sh(["cat", f"{DEST}/{p}"])
+    print(f"== {repo} @ {head}")
 
 
-def stage2_install() -> bool:
-    r = sh([sys.executable, "-m", "pip", "install", "--quiet", DEST])
+def section(title: str) -> None:
+    print(f"\n{'='*20} {title} {'='*20}", flush=True)
+
+
+# ---------- korail-mobile-api: learn its surface, then try it ----------
+section("korail-mobile-api: API surface")
+clone("yakisoba0728/korail-mobile-api", "/tmp/kma")
+sh("ls /tmp/kma/checks/")
+sh("grep -n 'def \\|^class ' /tmp/kma/src/korail_mobile_api/client.py | head -80")
+sh("grep -n 'def \\|^class ' /tmp/kma/src/korail_mobile_api/session.py | head -30")
+print("== a checks/ script for usage reference (first 120 lines of the most probe-like) ==")
+sh("for f in /tmp/kma/checks/*; do echo \"--- $f\"; done")
+sh("sed -n 1,120p $(ls /tmp/kma/checks/* | head -1)")
+
+if PROBE and UID and PW:
+    section("korail-mobile-api: live")
+    sys.path.insert(0, "/tmp/kma/src")
+    try:
+        import korail_mobile_api as kma
+        names = [n for n in dir(kma) if not n.startswith("_")]
+        print("exports:", ", ".join(sorted(names)))
+        client_cls = None
+        for cand in ("KorailClient", "Client", "Korail", "KorailMobileClient"):
+            client_cls = getattr(kma, cand, None)
+            if client_cls:
+                print("client class:", cand)
+                break
+        if client_cls:
+            try:
+                c = client_cls()
+                for login_name in ("login",):
+                    fn = getattr(c, login_name, None)
+                    if fn:
+                        fn(UID, PW)
+                        print("login OK")
+                        break
+                for meth in ("search_train", "search_trains", "search"):
+                    s = getattr(c, meth, None)
+                    if s:
+                        for dep, arr in ROUTES:
+                            try:
+                                trains = s(dep, arr, DATE, "060000")
+                                kinds = sorted({str(getattr(t, "train_type_name",
+                                                getattr(t, "train_name", "?"))) for t in trains})
+                                print(f"{meth} {dep}→{arr}: {len(trains)} trains, types={kinds}")
+                            except Exception as e:
+                                print(f"{meth} {dep}→{arr} FAILED: {type(e).__name__}: {e}")
+                        break
+            except Exception as e:
+                print(f"kma live FAILED: {type(e).__name__}: {e}")
+    except Exception as e:
+        print(f"kma import FAILED: {type(e).__name__}: {e}")
+
+# ---------- alternatives: license + packaging + live ----------
+for repo, mod in (("devgyurak/pykorail", "pykorail"), ("bsangmin/letskorail", "letskorail")):
+    section(repo)
+    dest = f"/tmp/{mod}"
+    try:
+        clone(repo, dest)
+    except Exception as e:
+        print("clone FAILED:", e)
+        continue
+    sh(f"ls {dest}")
+    sh(f"find {dest} -maxdepth 2 -iname 'license*' -exec sh -c 'echo {{}}; head -3 {{}}' \;")
+    sh(f"find {dest} -maxdepth 2 -name 'pyproject.toml' -o -maxdepth 2 -name 'setup.py' | head")
+    sh(f"sed -n 1,60p {dest}/README.md")
+    r = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", dest], text=True)
     print("INSTALL", "OK" if r.returncode == 0 else "FAILED")
-    if r.returncode != 0:
-        return False
-    try:
-        import korail_mobile_api as k  # noqa
-        print("IMPORT OK, version:", getattr(k, "__version__", "?"))
-        print("top-level:", ", ".join(sorted(n for n in dir(k) if not n.startswith("_"))[:80]))
-        return True
-    except Exception as e:
-        print("IMPORT FAILED:", e)
-        return False
-
-
-def stage3_probe() -> None:
-    uid, pw = os.environ.get("KORAIL_ID"), os.environ.get("KORAIL_PW")
-    if os.environ.get("PROBE") != "1" or not uid or not pw:
-        print("probe: skipped (PROBE!=1 or credentials absent)")
-        return
-    import korail_mobile_api as k
-    print("probe: client symbols:", [n for n in dir(k) if "lient" in n or "orail" in n])
-    # The client API is learned from stage 1's README dump; this block is
-    # updated once that is known. Guarded so a wrong guess prints, not raises.
-    try:
-        client = k.KorailClient(uid, pw)  # best guess; refine after stage 1
-        print("login OK")
-        date = (datetime.now() + timedelta(days=1)).strftime("%Y%m%d")
-        for dep, arr in (("서울", "부산"), ("수서", "부산")):
-            trains = client.search_train(dep=dep, arr=arr, date=date, time="060000")
-            types = sorted({getattr(t, "train_type_name", getattr(t, "train_name", "?")) for t in trains})
-            print(f"search {dep}→{arr} {date}: {len(trains)} trains, types={types}")
-    except Exception as e:
-        print(f"probe FAILED at: {type(e).__name__}: {e}")
-
-
-if __name__ == "__main__":
-    stage1_inspect()
-    if stage2_install():
-        stage3_probe()
