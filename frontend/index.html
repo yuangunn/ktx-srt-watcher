@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="발권창구">
-  <meta name="description" content="KTX/SRT 취소표 감시 워치 관리">
+  <meta name="description" content="KTX 취소표 감시 워치 관리 (구 SRT 노선 포함)">
   <!-- The watch list and poll state are stored here, not in the repo.
        Forks: point this at your own Cloudflare Worker. -->
   <meta name="cf-worker-url" content="https://ktx-srt-watcher-cron.rms6654.workers.dev">
@@ -189,7 +189,7 @@
         <div class="toggle-row">
           <div class="toggle-row__main">
             <div class="toggle-row__title">로그인 실패도 푸시오버로</div>
-            <div class="toggle-row__desc">코레일·SRT 로그인이 끊기거나 복구될 때 푸시오버로도 알림. 끄면 텔레그램만 — 푸시오버는 조용한 시간을 무시하므로 새벽에 깨울 수 있습니다. 좌석 발견 알림은 이 토글과 무관합니다.</div>
+            <div class="toggle-row__desc">코레일 로그인이 끊기거나 복구될 때 푸시오버로도 알림. 끄면 텔레그램만 — 푸시오버는 조용한 시간을 무시하므로 새벽에 깨울 수 있습니다. 좌석 발견 알림은 이 토글과 무관합니다.</div>
           </div>
           <label class="toggle">
             <input class="toggle__input" type="checkbox" id="login-push-toggle" aria-label="로그인 실패도 푸시오버로">
@@ -309,7 +309,7 @@
         <div class="toggle-row">
           <div class="toggle-row__main">
             <div class="toggle-row__title">대기예약 자동 등록</div>
-            <div class="toggle-row__desc">매진 좌석에 코레일 try_waiting / SRT reserve_standby로 대기 등록. 임시예약과 동시 진행.</div>
+            <div class="toggle-row__desc">매진 좌석에 예약대기 등록. 임시예약과 동시 진행.</div>
           </div>
           <label class="toggle">
             <input class="toggle__input" type="checkbox" id="allow-waiting-toggle" aria-label="대기예약 자동 등록">
@@ -402,13 +402,9 @@
         <span class="sheet__filler" aria-hidden="true"></span>
       </header>
 
-      <fieldset class="seg" aria-label="제공자">
-        <legend class="field__label">제공자</legend>
-        <div class="seg__track">
-          <label class="seg__opt"><input type="radio" name="provider" value="korail" checked><span data-prov="korail">KORAIL · KTX</span></label>
-          <label class="seg__opt"><input type="radio" name="provider" value="srt"><span data-prov="srt">SRT</span></label>
-        </div>
-      </fieldset>
+      <!-- 2026-09-01 통합: 전 고속열차가 코레일 하나로 팔린다. 제공자 선택은
+           사라졌고, 구 SRT 노선은 KTX-산천 열차종으로 잡는다. -->
+      <input type="hidden" name="provider" value="korail">
 
       <div class="row row--2">
         <div class="field">
