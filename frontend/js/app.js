@@ -28,25 +28,26 @@ function applyTheme(theme) {
 function saveTheme(theme) { localStorage.setItem(THEME_KEY, theme); }
 
 // ----- rail data ------------------------------------------------------------
-// Curated from Korean Wikipedia (KTX / 수서고속철도). Includes every station
-// that KTX or SRT trains actually stop at as of 2026-04. When new lines open
-// (e.g., 동해선 추가구간) add stations here — order within a provider is
-// unimportant since dropdowns sort with localeCompare('ko').
+// Curated from Korean Wikipedia. One list since the 2026-09-01 KORAIL–SR
+// merger folded SRT's stations (수서·동탄·평택지제) into KORAIL's network.
+// When new lines open add stations here — order is unimportant since
+// dropdowns sort with localeCompare('ko').
 const RAIL_DATA = {
   korail: {
     stations: [
       '가남', '감곡장호원', '강릉', '경산', '경주', '계룡', '곡성', '공주',
       '광명', '광주송정', '구례구', '구포', '기장', '김제', '김천(구미)',
-      '나주', '남원', '남창', '논산', '단양', '대전', '동대구', '동해', '둔내',
+      '나주', '남원', '남창', '논산', '단양', '대전', '동대구', '동탄', '동해', '둔내',
       '마산', '만종', '목포', '묵호', '문경', '물금', '밀양',
       '부발', '부산', '부전', '북울산',
       '살미', '삼척', '상봉', '서대구', '서대전', '서울', '서원주', '센텀',
-      '수안보온천', '수원', '순천', '신해운대',
+      '수서', '수안보온천', '수원', '순천', '신해운대',
       '안동', '앙성온천', '양평', '여수엑스포', '여천', '연풍', '영덕',
       '영등포', '영주', '영천', '오송', '용산', '울산', '울진', '원주', '의성',
       '익산', '장성', '전주', '정동진', '정읍', '제천', '진부(오대산)', '진영', '진주',
       '창원', '창원중앙', '천안아산', '청량리', '충주',
-      '태화강', '판교', '평창', '포항', '풍기', '행신', '횡성',
+      '판교', '평택지제',
+      '태화강', '평창', '포항', '풍기', '행신', '횡성',
     ],
     train_types: [
       { value: 'KTX', label: 'KTX', default: true },
@@ -60,19 +61,10 @@ const RAIL_DATA = {
       { value: '누리로', label: '누리로', default: false },
     ],
   },
-  srt: {
-    stations: [
-      '경주', '곡성', '공주', '광주송정', '구례구',
-      '김천(구미)', '나주', '남원', '남창', '대전', '동대구', '동탄',
-      '마산', '목포', '밀양', '부산', '서대구', '수서', '순천',
-      '여수엑스포', '여천', '오송', '울산', '익산', '전주', '정읍',
-      '진영', '진주', '창원', '창원중앙', '천안아산', '평택지제', '포항',
-    ],
-    train_types: [
-      { value: 'SRT', label: 'SRT', default: true },
-    ],
-  },
 };
+// 2026-09-01 통합 전에 저장된 워치·최근기록은 provider가 'srt'일 수 있다.
+// 데이터는 하나의 코레일 목록으로 흡수됐으므로 전부 korail로 읽는다.
+function railProvider(p) { return p === 'srt' ? 'korail' : (p || 'korail'); }
 
 // ----- storage --------------------------------------------------------------
 
@@ -105,6 +97,7 @@ function loadRecent() {
   }
 }
 function rememberRoute(provider, from, to) {
+  provider = railProvider(provider);
   if (!from || !to) return;
   const r = loadRecent();
   const list = (r.stations[provider] || []).filter(s => s !== from && s !== to);
@@ -386,13 +379,15 @@ function stationPicker() {
     const html = [];
 
     if (!q) {
-      const routes = recent.routes.filter(r => r.provider === ctx.provider);
+      const routes = recent.routes.filter(r => railProvider(r.provider) === ctx.provider);
       if (routes.length) {
         html.push('<div class="station-group">최근 경로</div>');
         routes.forEach(r => html.push(
           row(`${r.from} → ${r.to}`, '둘 다 채우기', `${r.from}|${r.to}`, 'route')));
       }
-      const stations = (recent.stations[ctx.provider] || []).filter(s => all.includes(s));
+      const legacy = ctx.provider === 'korail' ? (recent.stations.srt || []) : [];
+      const stations = [...new Set([...(recent.stations[ctx.provider] || []), ...legacy])]
+        .filter(s => all.includes(s));
       if (stations.length) {
         html.push('<div class="station-group">최근 역</div>');
         stations.forEach(s => html.push(row(s, s === ctx.other ? '반대편에 선택됨' : '', s)));
@@ -418,7 +413,7 @@ function stationPicker() {
 
   return {
     open(provider, which, other, cb) {
-      ctx = { provider, which, other: other || '' };
+      ctx = { provider: railProvider(provider), which, other: other || '' };
       onPick = cb;
       title.textContent = which === 'from' ? '출발역' : '도착역';
       search.value = '';
@@ -431,6 +426,7 @@ function stationPicker() {
 }
 
 function fillTrainTypeChips(provider, group) {
+  provider = railProvider(provider);
   group.className = `check-group check-group--${provider}`;
   const legend = '<legend class="field__label">열차 종류</legend>';
   const chips = RAIL_DATA[provider].train_types.map(t => `
@@ -539,7 +535,8 @@ function groupTrainTypes(types) {
 
 // Short label shown inside the gradient stamp avatar.
 function stampLabel(watch) {
-  if (watch.provider === 'srt') return 'SRT';
+  // Pre-merger SRT watches now hunt KTX-산천 trains; label them as such.
+  if (watch.provider === 'srt') return '산천';
   const types = watch.train_types || [];
   // Prefer a distinctive sub-brand when the watch is exclusively that type.
   if (types.length === 1) {
@@ -560,7 +557,7 @@ function renderWatchCard(watch, state) {
   node.dataset.provider = watch.provider;
   node.dataset.active = String(watch.active);
   $('.watch__stamp', node).textContent = stampLabel(watch);
-  $('.badge--provider', node).textContent = watch.provider === 'srt' ? 'SRT' : 'KORAIL';
+  $('.badge--provider', node).textContent = watch.provider === 'srt' ? '구 SRT' : 'KORAIL';
   // Auto-reserve badge. If the worker self-disabled it after a successful
   // reservation (tracked in state.auto_reserve_disabled), show a muted
   // "완료" badge so the user knows it fired and can re-enable if needed.
@@ -1074,20 +1071,28 @@ class App {
       rows.push({ name: '폴링', level: 'warn', detail: '실행 기록 없음' });
     }
 
-    // 2) Provider logins. A dead Korail/SRT login is the quietest failure this
-    // system has: the run succeeds, last_run advances, and every other row here
-    // stays green while nothing is actually being watched.
-    const loginFailures = this.state?.login_failures || {};
-    const failed = Object.keys(loginFailures);
-    if (failed.length) {
-      const label = { korail: '코레일', srt: 'SRT' };
+    // 2) Provider outages — the quietest failures this system has: the run
+    // succeeds, last_run advances, every other row stays green while nothing
+    // is actually being watched. Two buckets: login (can't get in) and
+    // search (in, but every query refused — how the 코레일+ 전환 bit us).
+    const label = { korail: '코레일', srt: '구 SRT' };
+    const loginFailed = Object.keys(this.state?.login_failures || {});
+    const searchFailed = Object.keys(this.state?.search_failures || {});
+    if (loginFailed.length) {
       rows.push({
         name: '철도사 로그인',
         level: 'bad',
-        detail: `${failed.map(p => label[p] || p).join(', ')} 실패 · 감시 중단`,
+        detail: `${loginFailed.map(p => label[p] || p).join(', ')} 실패 · 감시 중단`,
       });
     } else {
       rows.push({ name: '철도사 로그인', level: 'ok', detail: '정상' });
+    }
+    if (searchFailed.length) {
+      rows.push({
+        name: '좌석 검색',
+        level: 'bad',
+        detail: `${searchFailed.map(p => label[p] || p).join(', ')} 전건 거부 · 감시 중단`,
+      });
     }
 
     // 3) GitHub Actions — recent run conclusions
@@ -1565,8 +1570,7 @@ class App {
     };
     this._setStation = setStation;
 
-    const currentProvider = () =>
-      form.querySelector('input[name="provider"]:checked')?.value || 'korail';
+    const currentProvider = () => 'korail';
 
     for (const which of ['from', 'to']) {
       $(which === 'from' ? '#from-btn' : '#to-btn').addEventListener('click', () => {
@@ -1589,15 +1593,6 @@ class App {
       const to = form.querySelector('input[name="to"]').value;
       setStation('from', to);
       setStation('to', f);
-    });
-
-    form.querySelectorAll('input[name="provider"]').forEach(input => {
-      input.addEventListener('change', e => {
-        // Station lists differ per provider, so a switch invalidates both ends.
-        setStation('from', '');
-        setStation('to', '');
-        fillTrainTypeChips(e.target.value, trainGroup);
-      });
     });
 
     $('#sheet-close').addEventListener('click', () => sheet.close());
@@ -1639,9 +1634,9 @@ class App {
     form.reset();
     this._editingWatchId = watchId || null;
     const editing = watchId ? this.config.watches.find(w => w.id === watchId) : null;
-    const provider = editing?.provider || 'korail';
-    form.querySelector(`input[name="provider"][value="${provider}"]`).checked = true;
-    fillTrainTypeChips(provider, $('#train-type-group'));
+    // Editing a pre-merger SRT watch re-saves it as a korail watch; the
+    // hidden provider field is always korail.
+    fillTrainTypeChips('korail', $('#train-type-group'));
     this._setStation('from', editing?.from || '');
     this._setStation('to', editing?.to || '');
     if (editing) {
@@ -1653,8 +1648,9 @@ class App {
       form.querySelector('input[name="senior"]').value = editing.passengers?.senior ?? 0;
       const seatRadio = form.querySelector(`input[name="seat_class"][value="${editing.seat_class}"]`);
       if (seatRadio) seatRadio.checked = true;
+      const editTypes = (editing.train_types || []).map(t => t === 'SRT' ? 'KTX-산천' : t);
       form.querySelectorAll('input[name="train_type"]').forEach(c => {
-        c.checked = (editing.train_types || []).includes(c.value);
+        c.checked = editTypes.includes(c.value);
       });
       const autoToggle = form.querySelector('input[name="auto_reserve"]');
       if (autoToggle) autoToggle.checked = !!editing.auto_reserve;
