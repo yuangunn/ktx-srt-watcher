@@ -18,12 +18,14 @@ import pytest
 
 VENDOR = Path(__file__).resolve().parent.parent / "worker" / "vendor" / "korail2"
 
-# sha256 of the files in the PyPI sdist korail2-0.4.0.tar.gz, which is itself
-# byte-identical to carpedm20/korail2 master (diff is empty).
+# sha256 of the vendored files. __init__.py and constants.py are byte-identical
+# to the PyPI sdist korail2-0.4.0.tar.gz; korail2.py carries the deliberate
+# patches listed in worker/vendor/README.md (app version + User-Agent for the
+# 코레일+ backend, which rejects the 2019 identity with MACRO ERROR).
 UPSTREAM_SHA256 = {
     "__init__.py": "9f4f0e98bd10fb629f817ac21056f10063213c5115efa66a778beb8dbfe06aba",
     "constants.py": "f989bc60ab44f69b962a963bd32b49ce081d61b6e97cc60fe9bdfc1cbf1e889b",
-    "korail2.py": "2601824ef45cb29404484de5937b9da479f1bf368e36e7ec4e563ff8f46d120a",
+    "korail2.py": "3a5e4b688ccb35b7d56e0fe88677d3b6ffb3e59fd61e7ca051b9b74a90e35cd0",
 }
 
 

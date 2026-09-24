@@ -61,7 +61,7 @@ KORAIL_PAYMENT_VOUCHER = "%s/ebizmw/PrdPkgBoucherView.do" % KORAIL_DOMAIN
 
 KORAIL_CODE = "%s.common.code.do" % KORAIL_MOBILE
 
-DEFAULT_USER_AGENT = "Dalvik/2.1.0 (Linux; U; Android 5.1.1; Nexus 4 Build/LMY48T)"
+DEFAULT_USER_AGENT = "Dalvik/2.1.0 (Linux; U; Android 15; Android)"
 
 
 def _get_utf8(data, key, default=None):
@@ -544,7 +544,7 @@ class Korail(object):
     _session = requests.session()
 
     _device = 'AD'
-    _version = '190617001'
+    _version = '250601003'
     _key = 'korail1234567890'
 
     _idx = None

@@ -34,7 +34,14 @@ password at login.
 - **Upstream**: https://github.com/carpedm20/korail2 (`carpedm20/korail2`)
 - **Version**: 0.4.0, from the PyPI sdist `korail2-0.4.0.tar.gz`
 - **License**: BSD 3-Clause — see `korail2/LICENSE`. Copyright (c) 2014 Taehoon Kim.
-- **Modifications**: none. The files are byte-identical to the sdist.
+- **Modifications** (korail2.py only; the other files stay byte-identical):
+  - `_version`: `'190617001'` → `'250601003'`, and `DEFAULT_USER_AGENT`:
+    Android 5.1.1 / Nexus 4 → `"Dalvik/2.1.0 (Linux; U; Android 15; Android)"`.
+    After the 2026-09-01 KORAIL–SR merger the 코레일+ backend rejects the 2019
+    app identity: login still works but every search returns "앱을 최신 버전으로
+    업데이트..." tagged MACRO ERROR. Values match what the maintained
+    korail-mobile-api client sends (its constants.py: KORAIL_API_VERSION,
+    KORAIL_USER_AGENT) against the same smart.letskorail.com endpoints.
 
 Upstream master and the 0.4.0 sdist are themselves identical (`diff` is empty),
 so this is also the last public state of the library.
