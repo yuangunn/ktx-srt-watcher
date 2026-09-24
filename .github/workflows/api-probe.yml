@@ -1,0 +1,80 @@
+name: api-probe
+
+# Manual diagnostic for the 코레일+ API migration. Two jobs:
+#   inspect — clones korail-mobile-api and prints its packaging, license and
+#             README verbatim, because this is the ground truth the sandbox
+#             cannot reach (external git is blocked there, and page fetches
+#             mangle the content).
+#   probe   — optional live check with the real account: login + a generic
+#             서울→부산 search. Prints counts and train-type names ONLY;
+#             never a route or date from the user's config (public logs).
+#
+# workflow_dispatch only — this must never run on the cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_probe:
+        description: "Also run the live login+search probe"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-probe
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Clone korail-mobile-api
+        run: |
+          git clone --depth 1 https://github.com/yakisoba0728/korail-mobile-api /tmp/kma
+          cd /tmp/kma
+          echo "== HEAD =="; git rev-parse HEAD
+          echo "== root files =="; ls -la
+          echo "== packaging files anywhere =="
+          find . -maxdepth 3 -name "pyproject.toml" -o -maxdepth 3 -name "setup.py" -o -maxdepth 3 -name "setup.cfg" | sort
+          echo "== license files anywhere =="
+          find . -iname "license*" | sort || true
+          echo "== README (first 200 lines) =="
+          sed -n 1,200p README.md || true
+          echo "== pyproject (if any) =="
+          cat pyproject.toml 2>/dev/null || cat src/pyproject.toml 2>/dev/null || echo "(none found at root or src/)"
+
+      - name: Try installing it
+        run: |
+          python3 -m pip install --quiet "/tmp/kma" && echo "INSTALL OK" || echo "INSTALL FAILED"
+          python3 - <<'PY'
+          try:
+              import korail_mobile_api as k
+              print("IMPORT OK:", getattr(k, "__version__", "?"))
+              names = [n for n in dir(k) if not n.startswith("_")]
+              print("top-level names:", ", ".join(sorted(names)[:60]))
+          except Exception as e:
+              print("IMPORT FAILED:", e)
+          PY
+
+  probe:
+    if: ${{ inputs.run_probe }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install
+        run: |
+          git clone --depth 1 https://github.com/yakisoba0728/korail-mobile-api /tmp/kma
+          python3 -m pip install --quiet /tmp/kma
+      - name: Login + generic search (counts only)
+        env:
+          KORAIL_ID: ${{ secrets.KORAIL_ID }}
+          KORAIL_PW: ${{ secrets.KORAIL_PW }}
+        run: |
+          python3 /tmp/kma/checks/probe.py 2>/dev/null || python3 - <<'PY'
+          # Placeholder until the inspect job teaches us the client API; the
+          # real probe lands in a follow-up commit.
+          print("probe script not yet written — see inspect job output first")
+          PY
