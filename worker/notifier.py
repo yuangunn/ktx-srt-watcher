@@ -301,6 +301,58 @@ def notify_login_failed(
                       text, priority=pushover.PRIORITY_HIGH)
 
 
+def format_search_failed(provider: str, error_msg: str) -> str:
+    label = PROVIDER_LABEL.get(provider, provider)
+    return (
+        f"🚨 {label} 검색 실패 — 감시 중단\n"
+        f"\n"
+        f"로그인은 되지만 {label} 좌석 검색이 전부 거부되고 있습니다.\n"
+        f"좌석이 나와도 알림이 가지 않습니다.\n"
+        f"\n"
+        f"사유: {error_msg}\n"
+        f"\n"
+        f"철도사 API 변경(앱 개편)일 가능성이 높습니다. 고쳐질 때까지 24시간마다 "
+        f"다시 알립니다."
+    )
+
+
+def notify_search_failed(
+    provider: str, error_msg: str, *, push: bool = False,
+    session: _PostSession | None = None,
+) -> None:
+    """Same policy as the login alert: Telegram always, Pushover opt-in.
+
+    Nothing about a rejected search API can be fixed at 3am, and the watcher
+    re-alerts daily until it recovers — the exact reasoning that keeps the
+    login alert off the wake-the-user channel by default.
+    """
+    text = format_search_failed(provider, error_msg)
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        send_telegram(bot_token, chat_id, text, session=session)
+    if push:
+        pushover.send(f"🚨 {PROVIDER_LABEL.get(provider, provider)} 검색 실패",
+                      text, priority=pushover.PRIORITY_HIGH)
+
+
+def format_search_recovered(provider: str) -> str:
+    label = PROVIDER_LABEL.get(provider, provider)
+    return f"✅ {label} 검색 복구 — 감시를 재개했습니다."
+
+
+def notify_search_recovered(
+    provider: str, *, push: bool = False, session: _PostSession | None = None,
+) -> None:
+    text = format_search_recovered(provider)
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        send_telegram(bot_token, chat_id, text, session=session)
+    if push:
+        pushover.send("✅ 검색 복구", text, priority=pushover.PRIORITY_HIGH)
+
+
 def format_login_recovered(provider: str) -> str:
     label = PROVIDER_LABEL.get(provider, provider)
     return f"✅ {label} 로그인 복구 — 감시를 재개했습니다."
