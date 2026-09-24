@@ -36,7 +36,13 @@ concurrency:
 
 jobs:
   watch:
-    runs-on: ubuntu-latest
+    # Home device, not a GitHub-hosted runner: the 코레일+ backend refuses
+    # datacenter IPs outright (code -8202, "VPN 또는 데이터센터를 통해서는
+    # 서비스를 이용할 수 없습니다"), so polling from Azure can never log in.
+    # Residential egress is a hard requirement, not an optimization.
+    # Setup: docs/SELF_HOSTED_RUNNER.md. While the runner is offline, ticks
+    # queue and the concurrency group keeps only the newest — no pile-up.
+    runs-on: [self-hosted, korail-home]
     timeout-minutes: 8        # cron 간격보다 짧게
     steps:
       - uses: actions/checkout@v4
@@ -54,15 +60,16 @@ jobs:
         # (worker.remote is stdlib-only for exactly this reason).
         run: python3 -m worker.gate >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
-        if: steps.gate.outputs.poll == 'true'
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
+      # System python + a local venv instead of actions/setup-python: on a
+      # self-hosted ARM device (Raspberry Pi) setup-python has no prebuilt
+      # interpreters to download, and the device's python3 (>=3.10 for
+      # pykorail) is exactly what we want anyway. The venv persists in the
+      # runner's work dir, so installs after the first are no-ops.
       - name: Install deps
-        if: steps.gate.outputs.poll == 'true'
-        run: pip install -r requirements.txt
+        if: steps.gate.outputs.poll == 'true' || (github.event_name == 'workflow_dispatch' && inputs.test_notify != 'off')
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements.txt
 
       # Fires the real seat-found alert with a fabricated train. The path that
       # matters only runs when a cancellation appears — which is exactly when
@@ -77,7 +84,7 @@ jobs:
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
           REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
-        run: python -m worker.main --test-notify=${{ inputs.test_notify }}
+        run: .venv/bin/python -m worker.main --test-notify=${{ inputs.test_notify }}
 
       - name: Run watcher
         # A test run must not also poll: it exists to isolate the alert path.
@@ -86,8 +93,6 @@ jobs:
           TZ: Asia/Seoul
           KORAIL_ID: ${{ secrets.KORAIL_ID }}
           KORAIL_PW: ${{ secrets.KORAIL_PW }}
-          SRT_ID: ${{ secrets.SRT_ID }}
-          SRT_PW: ${{ secrets.SRT_PW }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # Optional. Unset = Telegram only (which cannot wake a silenced phone).
@@ -96,4 +101,4 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
           REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
-        run: python -m worker.main
+        run: .venv/bin/python -m worker.main
