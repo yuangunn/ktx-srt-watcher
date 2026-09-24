@@ -1,9 +1,12 @@
-"""Round 3: pykorail live test — the one question left is whether it clears
-the 코레일+ MACRO rejection with a real account.
+"""Round 4: why does pykorail reject a login that korail2 accepts?
 
-Public log discipline: generic probe routes only (서울→부산, 수서→부산,
-tomorrow), counts and type names only, user config never read. Also dumps
-pykorail's API reference so the adapter rewrite needs no further rounds.
+Hypothesis: id-shape auto-detection. pykorail classifies korail_id by shape
+(email / phone 010-1234-5678 / membership number); a hyphen-less phone number
+reads as a membership number and fails with "아이디 또는 비밀번호가 올바르지
+않습니다" — while korail2's older endpoint may accept it.
+
+Public log discipline: the id itself is never printed; only coarse shape
+flags (has @, all digits) and which variant number succeeded.
 """
 from __future__ import annotations
 
@@ -12,57 +15,51 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-PROBE = os.environ.get("PROBE") == "1"
-UID, PW = os.environ.get("KORAIL_ID"), os.environ.get("KORAIL_PW")
+subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pykorail"], check=True)
 
+from pykorail import Korail, LoginFailedError, NoResultsError  # noqa: E402
 
-def sh(cmd: str) -> None:
-    print(f"$ {cmd}", flush=True)
-    subprocess.run(cmd, shell=True, text=True)
+UID, PW = os.environ.get("KORAIL_ID", ""), os.environ.get("KORAIL_PW", "")
+if os.environ.get("PROBE") != "1" or not UID or not PW:
+    print("probe skipped"); sys.exit(0)
 
+print(f"id shape: has_at={'@' in UID} all_digits={UID.isdigit()} has_hyphen={'-' in UID}")
 
-print("=" * 20, "pykorail: reference docs", "=" * 20)
-subprocess.run(["git", "clone", "--depth", "1",
-                "https://github.com/devgyurak/pykorail", "/tmp/pyk"],
-               check=True, capture_output=True)
-sh("git -C /tmp/pyk rev-parse HEAD")
-sh("sed -n 1,260p /tmp/pyk/docs/reference.md")
-sh("sed -n 60,200p /tmp/pyk/README.md")
+variants: list[str] = [UID]
+if UID.isdigit() and len(UID) == 11 and UID.startswith("01"):
+    variants.append(f"{UID[:3]}-{UID[3:7]}-{UID[7:]}")  # phone with hyphens
+if UID.isdigit() and len(UID) == 10:
+    variants.append(f"{UID[:3]}-{UID[3:6]}-{UID[6:]}")  # 010-less legacy phone? unlikely
 
-print("=" * 20, "pykorail: install from PyPI", "=" * 20)
-r = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pykorail"], text=True)
-print("INSTALL", "OK" if r.returncode == 0 else "FAILED")
-sh(f"{sys.executable} -m pip show pykorail | grep -E '^(Name|Version|License|Requires)'")
+korail = None
+for i, u in enumerate(variants):
+    try:
+        korail = Korail.logged_in(u, PW)
+        print(f"login OK with variant {i} of {len(variants)}")
+        break
+    except LoginFailedError as e:
+        print(f"variant {i} failed: {e}")
+    except Exception as e:
+        print(f"variant {i} error: {type(e).__name__}: {e}")
 
-if not (PROBE and UID and PW):
-    print("live probe skipped")
+if korail is None:
+    print("all login variants failed")
     sys.exit(0)
 
-print("=" * 20, "pykorail: live", "=" * 20)
-from pykorail import Korail  # noqa: E402
-
-tomorrow = (datetime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-try:
-    with Korail.logged_in(UID, PW) as korail:
-        print("login OK")
-        for dep, arr in (("서울", "부산"), ("수서", "부산"), ("부산", "수서")):
-            try:
-                trains = korail.trains.search(dep, arr, depart_after=tomorrow)
-                kinds: set[str] = set()
-                for t in trains:
-                    for attr in ("train_type_name", "train_type", "train_name", "category"):
-                        v = getattr(t, attr, None)
-                        if v:
-                            kinds.add(str(v))
-                            break
-                print(f"search {dep}→{arr}: {len(trains)} trains, types={sorted(kinds)}")
-                if trains:
-                    t0 = trains[0]
-                    print("  train attrs:", ", ".join(sorted(a for a in dir(t0) if not a.startswith('_'))))
-            except Exception as e:
-                print(f"search {dep}→{arr} FAILED: {type(e).__name__}: {e}")
-        # Surfaces we need for parity with the old adapter:
-        for name in ("reservations", "tickets", "reserve"):
-            print(f"korail.{name}:", type(getattr(korail, name, None)).__name__)
-except Exception as e:
-    print(f"live FAILED: {type(e).__name__}: {e}")
+with korail:
+    tomorrow = (datetime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    for dep, arr in (("서울", "부산"), ("수서", "부산"), ("부산", "동탄")):
+        try:
+            trains = korail.trains.search(dep, arr, depart_after=tomorrow, include_no_seats=True)
+            kinds = sorted({t.train_type_name for t in trains})
+            n_seat = sum(1 for t in trains if t.has_seat())
+            print(f"search {dep}→{arr}: {len(trains)} trains ({n_seat} with seats), types={kinds}")
+        except NoResultsError:
+            print(f"search {dep}→{arr}: NoResultsError (no trains match)")
+        except Exception as e:
+            print(f"search {dep}→{arr} FAILED: {type(e).__name__}: {e}")
+    try:
+        print("reservations.all():", len(korail.reservations.all()), "holds")
+        print("tickets.all():", len(korail.tickets.all()), "tickets")
+    except Exception as e:
+        print(f"reservations/tickets FAILED: {type(e).__name__}: {e}")
