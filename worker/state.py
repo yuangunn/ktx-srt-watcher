@@ -103,20 +103,23 @@ def clear_pending_reservation(state: dict[str, Any], watch_id: str) -> None:
         del pend[watch_id]
 
 
-# Re-alert about a still-broken login once a day. Alerting every poll would be
-# ~48 messages/day and get muted; alerting only once means a failure noticed at
-# 3am and dismissed half-asleep is never raised again.
+# Re-alert about a still-broken login or search once a day. Alerting every
+# poll would be ~48 messages/day and get muted; alerting only once means a
+# failure noticed at 3am and dismissed half-asleep is never raised again.
 LOGIN_ALERT_REPEAT_HOURS = 24
 
 
-def record_login_failure(state: dict[str, Any], provider: str, when: str) -> bool:
-    """Remember that a provider login failed. True if the caller should alert.
+def _record_outage(state: dict[str, Any], bucket: str, provider: str, when: str) -> bool:
+    """Remember a provider-level outage. True if the caller should alert now.
 
-    A dead login is the quietest possible failure: the run still succeeds, the
-    state timestamp still advances, so neither the heartbeat nor the health card
-    notices — the watcher simply stops checking that provider.
+    First occurrence alerts immediately; a persisting one re-alerts every
+    LOGIN_ALERT_REPEAT_HOURS. Outages of this kind are the quietest possible
+    failures: the run still succeeds, the state timestamp still advances, so
+    neither the heartbeat nor the health card notices — the watcher simply
+    stops checking that provider. Login was the first of the family; the
+    코레일+ MACRO search rejection proved the same hole exists after login.
     """
-    failures = state.setdefault("login_failures", {})
+    failures = state.setdefault(bucket, {})
     entry = failures.get(provider)
     if entry is None:
         failures[provider] = {"since": when, "notified_at": when}
@@ -131,14 +134,31 @@ def record_login_failure(state: dict[str, Any], provider: str, when: str) -> boo
     return False
 
 
-def clear_login_failure(state: dict[str, Any], provider: str) -> bool:
-    """Called on a successful login. True if it had been failing, so the caller
-    can say it is back — otherwise the user is left wondering."""
-    failures = state.get("login_failures") or {}
+def _clear_outage(state: dict[str, Any], bucket: str, provider: str) -> bool:
+    """Called when the provider works again. True if it had been failing, so
+    the caller can say it is back — otherwise the user is left wondering."""
+    failures = state.get(bucket) or {}
     if provider in failures:
         del failures[provider]
         return True
     return False
+
+
+def record_login_failure(state: dict[str, Any], provider: str, when: str) -> bool:
+    return _record_outage(state, "login_failures", provider, when)
+
+
+def clear_login_failure(state: dict[str, Any], provider: str) -> bool:
+    return _clear_outage(state, "login_failures", provider)
+
+
+def record_search_failure(state: dict[str, Any], provider: str, when: str) -> bool:
+    """Every watch of the provider failed this poll — login fine, search dead."""
+    return _record_outage(state, "search_failures", provider, when)
+
+
+def clear_search_failure(state: dict[str, Any], provider: str) -> bool:
+    return _clear_outage(state, "search_failures", provider)
 
 
 def _parse_iso(value: str | None) -> datetime | None:

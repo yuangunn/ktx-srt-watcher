@@ -209,6 +209,8 @@ def run_watches(
             provider, watches, state, now_iso,
             notify_rearmed_fn=notify_auto_reserve_rearmed_fn,
         )
+        any_watch_ok = False
+        last_watch_err: Exception | None = None
         for watch in watches:
             try:
                 new_train_total += _process_watch(
@@ -221,8 +223,29 @@ def run_watches(
                     silent=silent_now,
                     renotify=renotify,
                 )
+                any_watch_ok = True
             except Exception as e:
+                last_watch_err = e
                 log.exception("[%s] watch %s failed: %s", provider_name, _wid(watch.id), e)
+        # Login failure has an alert; a provider whose every SEARCH fails died
+        # just as completely and just as quietly — the run stays green, state
+        # advances, the health card smiles. That is how the 코레일+ MACRO
+        # rejection went unnoticed until a seat was already missed. Alert on
+        # the systemic case (all watches failed); a single failing watch among
+        # working ones is a per-watch problem, not a dead provider.
+        if watches and not any_watch_ok:
+            if state_mod.record_search_failure(state, provider_name, now_iso):
+                try:
+                    notifier.notify_search_failed(
+                        provider_name, str(last_watch_err), push=login_push)
+                except Exception as nfx:
+                    log.exception("search-failure notify itself failed: %s", nfx)
+        elif any_watch_ok and state_mod.clear_search_failure(state, provider_name):
+            log.info("[%s] search recovered", provider_name)
+            try:
+                notifier.notify_search_recovered(provider_name, push=login_push)
+            except Exception as nfx:
+                log.exception("search-recovery notify itself failed: %s", nfx)
 
     # Record this *actual* poll (skip runs returned earlier, so they're never
     # counted). PWA stats read poll_history instead of GHA run counts.
