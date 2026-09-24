@@ -1,0 +1,37 @@
+name: api-probe
+
+# Manual diagnostic for the 코레일+ API migration. All logic lives in
+# scripts/api_probe.py so it can be iterated on a branch: dispatching with a
+# branch ref runs that branch's copy. Public logs — the script prints counts
+# and train-type names only, never anything from the user's config.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_probe:
+        description: "Also run the live login+search probe"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect / install / probe
+        env:
+          PROBE: ${{ inputs.run_probe && '1' || '0' }}
+          KORAIL_ID: ${{ secrets.KORAIL_ID }}
+          KORAIL_PW: ${{ secrets.KORAIL_PW }}
+        run: python scripts/api_probe.py
