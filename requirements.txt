@@ -1,9 +1,8 @@
-# korail2 is not here: it lives in worker/vendor/korail2, because the fork we
-# used to install from was deleted and took the whole watcher down with it.
-# These are the libraries it needs at runtime — see worker/vendor/README.md.
-pycryptodome>=3.19.0   # korail2 encrypts the login password with AES
-six>=1.16.0            # korail2 uses six.with_metaclass
-SRTrain>=2.6.7
+# pykorail speaks the 코레일+ protocol (post 2026-09-01 merger): the backend
+# fingerprints the TLS handshake, so it rides on curl-cffi impersonation —
+# the reason patching the old korail2 could never work. MIT, on PyPI.
+# SRTrain is gone with the SRT service itself (app and API closed 2026-08-31).
+pykorail>=0.2.0
 requests>=2.31.0
 pydantic>=2.5.0
 pytest>=8.0.0
