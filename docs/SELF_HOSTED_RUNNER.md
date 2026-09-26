@@ -179,12 +179,18 @@ echo "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> .e
    로그온 시 숨은 WSL 세션을 띄우는 예약 작업 (PowerShell, 한 번):
 
    ```powershell
-   $a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-WindowStyle Hidden -Command "wsl.exe -d Ubuntu --exec sleep infinity"'
+   $a = New-ScheduledTaskAction -Execute "conhost.exe" -Argument "--headless wsl.exe -d Ubuntu --exec sleep infinity"
    $t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
    $s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
    Register-ScheduledTask -TaskName "WSL-korail-runner" -Action $a -Trigger $t -Settings $s
    Start-ScheduledTask -TaskName "WSL-korail-runner"
    ```
+
+   `conhost --headless`인 이유: 윈도우 11은 콘솔 프로그램을 Windows
+   Terminal 창으로 띄우는데 `powershell -WindowStyle Hidden`은 그 창을
+   숨기지 못합니다. 창이 보이면 누군가 닫게 되고, 닫는 순간 WSL을 붙잡던
+   프로세스가 죽어 러너도 꺼집니다 (결과 코드 `3221225786`). headless
+   conhost는 창을 아예 만들지 않습니다.
 5. **절전 끄기 + 자동 로그인**: 설정 → 시스템 → 전원 → 절전 "안 함".
    예약 작업은 로그인해야 돌기 때문에 윈도우 업데이트 재부팅 뒤를 위해
    자동 로그인(`netplwiz`, 안 보이면 계정 → 로그인 옵션에서 "Windows Hello
@@ -201,6 +207,7 @@ Get-ScheduledTaskInfo -TaskName WSL-korail-runner | Select LastRunTime, LastTask
 
 | 결과 | 원인 | 조치 |
 |---|---|---|
+| `Stopped` + LastTaskResult `3221225786` | 예약 작업의 창이 닫혀 강제 종료됨 (구버전 `powershell -WindowStyle Hidden` 등록) | 위 4번의 `conhost --headless` 명령으로 다시 등록 (`Unregister-ScheduledTask -TaskName WSL-korail-runner -Confirm:$false` 먼저) |
 | `Stopped` + LastTaskResult가 `267009`(실행 중)이 아님 | 예약 작업이 안 돌았거나 끝나버림 | `Start-ScheduledTask -TaskName WSL-korail-runner` 후 `wsl -l -v` 재확인 |
 | `Stopped` + 재부팅 후 로그인 화면에서 멈춰 있었음 | 자동 로그인 미설정 | 위 5번 |
 | `Running` | WSL은 살아있고 러너 서비스 문제 | 아래 Ubuntu 명령 |
