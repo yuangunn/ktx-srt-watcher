@@ -18,9 +18,14 @@ compatibility_date = "2026-04-30"
 #                     cron below, and the handler dispatches on it.
 #   "*/1 * * * *"   → processReminders: walks the REMINDERS KV and fires
 #                     any due payment-deadline reminders to Telegram
-#   "0 */6 * * *"   → heartbeatCheck: alerts if state.json::last_run is
-#                     stale (worker silently dead — PAT expired, GHA
-#                     suspended, code regression, etc.)
+#   "0 * * * *"     → runnerCheck (hourly): alerts when no watch.yml run
+#                     has succeeded for 30 min — the home self-hosted
+#                     runner is offline — and again when it recovers.
+#                     Every 6th hour also heartbeatCheck: alerts if
+#                     state.json::last_run is stale (worker silently dead —
+#                     PAT expired, GHA suspended, code regression, etc.).
+#                     They share one slot because the Workers free plan
+#                     allows only 5 cron triggers.
 #   "0 0 * * *"     → checkPATExpiration: 00:00 UTC = 09:00 KST. Reads
 #                     the GitHub-Authentication-Token-Expiration header
 #                     and warns 7 days before the worker's GITHUB_TOKEN
@@ -33,7 +38,7 @@ compatibility_date = "2026-04-30"
 # GHA minutes are free/unlimited; the watcher's own throttle keeps the
 # actual Korail/SRT poll rate sane (min 10 min, see settings.poll_interval_mode).
 [triggers]
-crons = ["*/3 * * * *", "*/1 * * * *", "0 */6 * * *", "0 0 * * *", "0 12 * * SUN"]
+crons = ["*/3 * * * *", "*/1 * * * *", "0 * * * *", "0 0 * * *", "0 12 * * SUN"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"
