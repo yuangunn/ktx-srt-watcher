@@ -13,11 +13,11 @@ CI(pytest)·Cloudflare 배포는 계속 GitHub 호스팅 러너에서 돕니다.
 
 ## 기기 선택
 
-| | 라즈베리파이 (권장) | 맥 (맥북/맥미니) |
-|---|---|---|
-| 상시 구동 | 전기료 월 몇백 원, 무소음 | 잠자기 설정 손봐야 함 |
-| 설치 난이도 | 쉬움 (systemd 서비스) | PATH 함정 하나 있음 (아래) |
-| 요구 사항 | **64-bit OS 필수** (Pi 3 이상 + Raspberry Pi OS 64-bit) | Apple Silicon/Intel 무관 |
+| | 라즈베리파이 | 맥 (맥북/맥미니) | 윈도우 미니PC (N100 등) |
+|---|---|---|---|
+| 상시 구동 | 전기료 월 몇백 원, 무소음 | 잠자기 설정 손봐야 함 | 절전 끄기 + 자동 로그인 |
+| 설치 난이도 | 쉬움 (systemd 서비스) | PATH 함정 하나 있음 (아래) | WSL2 설치 + 유지 작업 ([아래](#윈도우-pc-wsl2)) |
+| 요구 사항 | **64-bit OS 필수** (Pi 3 이상 + Raspberry Pi OS 64-bit) | Apple Silicon/Intel 무관 | Windows 10/11, WSL2 |
 
 공통 요구: Python **3.10+** (`python3 --version`), git, 집 인터넷.
 Pi OS bookworm은 3.11이라 그대로 됩니다. macOS는 아래 참고.
@@ -30,6 +30,7 @@ Pi OS bookworm은 3.11이라 그대로 됩니다. macOS는 아래 참고.
    (저장소 → Settings → Actions → Runners → **New self-hosted runner**)
 2. 기기에 맞게 선택:
    - 라즈베리파이 → **Linux / ARM64**
+   - 윈도우 PC(WSL2) → **Linux / x64**
    - Apple Silicon 맥 → **macOS / ARM64**, Intel 맥 → macOS / x64
 3. 페이지에 **Download / Configure 명령이 등록 토큰과 함께** 표시됩니다.
    토큰은 약 1시간만 유효하니 페이지를 띄워둔 채 진행하세요.
@@ -149,9 +150,112 @@ echo "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> .e
 
 ## 러너가 꺼져 있으면
 
-잡이 쌓이지 않습니다 — `concurrency` 그룹이 최신 틱만 남기고, 15분 이상
-큐에 있으면 CF 워커가 취소합니다. 기기가 다시 켜지면 다음 틱부터 자연히
-재개됩니다. 며칠 꺼두면 그동안 감시가 멈출 뿐, 고장나는 것은 없습니다.
+잡이 쌓이지 않습니다 — `concurrency` 그룹이 최신 틱만 남기고 이전 대기
+틱은 취소됩니다. 기기가 다시 켜지면 다음 틱부터 자연히 재개됩니다.
+며칠 꺼두면 그동안 감시가 멈출 뿐, 고장나는 것은 없습니다.
+
+**알림:** CF 워커가 매시 정각에 확인해서, `watch.yml`이 30분 넘게 한 번도
+성공하지 못했으면 텔레그램 **"🖥️ 집 러너 응답 없음"** 을 보냅니다 (복구
+전까지 6시간마다 반복). 돌아오면 **"✅ 집 러너 복구"**. 조용한 시간대·폴링
+간격으로 건너뛴 틱도 러너에서 초록으로 끝나므로 오탐이 없습니다.
+
+---
+
+## 윈도우 PC (WSL2)
+
+윈도우에서는 러너를 WSL2 Ubuntu 안에 설치합니다. 워크플로는 그대로(Linux
+러너)이고, 위 Linux 절차를 WSL 안에서 따르면 됩니다. 추가로 챙길 것:
+
+1. **설치**: 관리자 PowerShell에서 `wsl --install -d Ubuntu` → 재부팅 →
+   같은 명령 한 번 더 (첫 실행은 WSL 엔진만 깔고 끝남)
+2. **홈 폴더에서 작업**: `wsl ~`로 들어갈 것. `C:\Windows\System32`에서
+   연 PowerShell로 `wsl`을 치면 `/mnt/c/WINDOWS/system32`에서 시작하고,
+   거기 풀면 `Cannot utime` 오류로 설치가 깨집니다
+3. **systemd**: `systemctl is-system-running`이 `running`/`degraded`여야
+   `svc.sh install`이 동작. 아니면
+   `printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf` →
+   PowerShell `wsl --shutdown` → 다시 진입
+4. **WSL 유지**: WSL은 열린 창이 없으면 스스로 꺼지고 러너도 같이 꺼집니다.
+   로그온 시 숨은 WSL 세션을 띄우는 예약 작업 (PowerShell, 한 번):
+
+   ```powershell
+   $a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-WindowStyle Hidden -Command "wsl.exe -d Ubuntu --exec sleep infinity"'
+   $t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+   $s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+   Register-ScheduledTask -TaskName "WSL-korail-runner" -Action $a -Trigger $t -Settings $s
+   Start-ScheduledTask -TaskName "WSL-korail-runner"
+   ```
+5. **절전 끄기 + 자동 로그인**: 설정 → 시스템 → 전원 → 절전 "안 함".
+   예약 작업은 로그인해야 돌기 때문에 윈도우 업데이트 재부팅 뒤를 위해
+   자동 로그인(`netplwiz`, 안 보이면 계정 → 로그인 옵션에서 "Windows Hello
+   로그인만 허용" 끄기)
+
+### 윈도우 점검 순서 (러너가 오프라인일 때)
+
+Ubuntu 창을 **열기 전에** PowerShell에서 (열면 WSL이 켜져 원인이 가려짐):
+
+```powershell
+wsl -l -v                                   # Ubuntu가 Running인가
+Get-ScheduledTaskInfo -TaskName WSL-korail-runner | Select LastRunTime, LastTaskResult
+```
+
+| 결과 | 원인 | 조치 |
+|---|---|---|
+| `Stopped` + LastTaskResult가 `267009`(실행 중)이 아님 | 예약 작업이 안 돌았거나 끝나버림 | `Start-ScheduledTask -TaskName WSL-korail-runner` 후 `wsl -l -v` 재확인 |
+| `Stopped` + 재부팅 후 로그인 화면에서 멈춰 있었음 | 자동 로그인 미설정 | 위 5번 |
+| `Running` | WSL은 살아있고 러너 서비스 문제 | 아래 Ubuntu 명령 |
+
+```sh
+systemctl status 'actions.runner.*' --no-pager
+journalctl -u 'actions.runner.*' -n 30 --no-pager
+sudo systemctl restart 'actions.runner.*'   # 재시작
+```
+
+---
+
+## 밖에서 원격으로 고치기
+
+러너가 꺼졌다는 알림을 밖에서 받아도 고칠 수 있게, 집 PC에 원격 접속을
+미리 설치해 두세요. 둘 중 하나면 충분하고, 1번을 권합니다.
+
+### 1) Chrome 원격 데스크톱 (권장 — 휴대폰에서 윈도우 화면 그대로)
+
+집 PC에서 한 번:
+
+1. Chrome으로 https://remotedesktop.google.com/access 접속 → Google 로그인
+2. **원격 액세스 설정** → 다운로드 → 설치 프로그램 실행
+3. PC 이름 정하고 **PIN 6자리 이상** 설정 (PC 로그인 암호와 다르게)
+4. 설정 → 시스템 → 전원에서 절전 "안 함"인지 재확인 (잠들면 접속 불가)
+
+밖에서: 휴대폰에 **Chrome Remote Desktop** 앱 설치 → 같은 Google 계정 →
+PC 선택 → PIN. 윈도우 화면이 뜨면 PowerShell을 열어 위 점검 순서대로.
+
+- 윈도우 로그인 화면(재부팅 후)에서도 접속됩니다 — 자동 로그인이 안 됐을
+  때 여기서 직접 로그인할 수 있음
+- 휴대폰 화면에서 키보드: 앱 메뉴 → 키보드 아이콘
+
+### 2) Tailscale + SSH (선택 — 터미널 선호 시)
+
+명령 몇 줄만 치면 되는 경우 휴대폰 터미널이 더 빠릅니다.
+
+1. 집 PC(윈도우)와 휴대폰에 **Tailscale** 설치, 같은 계정으로 로그인
+   (무료, 개인용). 두 기기가 사설망으로 묶여 공유기 설정이 필요 없습니다
+2. Ubuntu 안에서 SSH 서버: `sudo apt install -y openssh-server && sudo systemctl enable --now ssh`
+3. 윈도우 → WSL 포트 연결 (관리자 PowerShell, 한 번). WSL2는 윈도우
+   `localhost`로만 포트가 노출되므로 Tailscale IP로 들어온 22번을 넘겨줍니다:
+
+   ```powershell
+   netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=2222 connectaddress=127.0.0.1 connectport=22
+   New-NetFirewallRule -DisplayName "WSL SSH (Tailscale)" -Direction Inbound -LocalPort 2222 -Protocol TCP -Action Allow -RemoteAddress 100.64.0.0/10
+   ```
+   (방화벽 규칙을 Tailscale 대역 `100.64.0.0/10`으로 제한 — 집 와이파이의
+   다른 기기에는 열리지 않음)
+4. 휴대폰: Termius 등 SSH 앱에서 `<PC의 Tailscale IP>:2222`, Ubuntu 사용자
+   이름/암호로 접속
+
+주의: SSH는 WSL이 떠 있을 때만 됩니다. WSL 자체가 꺼진 경우(가장 흔한
+원인)엔 1번 원격 데스크톱으로 `Start-ScheduledTask`를 해야 하므로, **1번은
+어느 쪽이든 설치해 두세요.**
 
 ## 왜 다른 방법이 아닌가
 

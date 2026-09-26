@@ -123,8 +123,11 @@ export default {
       ctx.waitUntil(dispatchWatcher(env, "cron"));
     } else if (event.cron === "*/1 * * * *") {
       ctx.waitUntil(processReminders(env));
-    } else if (event.cron === "0 */6 * * *") {
-      ctx.waitUntil(heartbeatCheck(env));
+    } else if (event.cron === "0 * * * *") {
+      ctx.waitUntil(runnerCheck(env));
+      if (new Date(event.scheduledTime).getUTCHours() % 6 === 0) {
+        ctx.waitUntil(heartbeatCheck(env));
+      }
     } else if (event.cron === "0 0 * * *") {
       ctx.waitUntil(checkPATExpiration(env));
     } else if (event.cron === "0 12 * * SUN") {
@@ -594,9 +597,72 @@ async function heartbeatCheck(env) {
       `점검 대상:\n` +
       `- CF Worker tail (\`npx wrangler tail\`)\n` +
       `- GitHub Actions runs 페이지\n` +
+      `- 집 러너(N100) 상태 — Settings → Actions → Runners\n` +
       `- PAT 만료 여부 (Settings → Developer settings)`,
   );
   console.log(`[${new Date().toISOString()}] heartbeat alert: ${elapsedHours.toFixed(1)}h since last_run`);
+}
+
+// RUNNER LIVENESS: the poll job only runs on the self-hosted runner at home
+// (코레일+ refuses datacenter IPs), so a PC asleep, WSL shut down or a runner
+// service that failed to start stops all watching — and nothing downstream
+// notices: ticks just queue and get superseded by the next one.
+//
+// last_run can't tell us this: quiet hours and the poll interval legitimately
+// leave it hours old. The signal is the latest *successful* watch.yml run:
+// throttled ticks still pass the gate and finish green on the runner, so with
+// a tick every 3 minutes a success older than RUNNER_STALE_MIN means no runner
+// has picked up any job. Alert once, repeat every RUNNER_REPEAT_HOURS, and
+// say so when it comes back.
+const RUNNER_STALE_MIN = 30;
+const RUNNER_REPEAT_HOURS = 6;
+const RUNNER_ALERT_KEY = "runner_alert";
+
+async function runnerCheck(env) {
+  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/watch.yml/runs?status=success&per_page=1`;
+  let run;
+  try {
+    const res = await fetch(url, { headers: ghHeaders(env) });
+    if (!res.ok) {
+      console.error(`runner check: HTTP ${res.status}`);
+      return;
+    }
+    run = (await res.json()).workflow_runs?.[0];
+  } catch (e) {
+    console.error(`runner check: ${e.message}`);
+    return;
+  }
+  if (!run) return;
+
+  const lastOkMs = new Date(run.updated_at).getTime();
+  const staleMin = Math.floor((Date.now() - lastOkMs) / 60_000);
+  const raw = await env.STATE.get(RUNNER_ALERT_KEY);
+  const alert = raw ? JSON.parse(raw) : null;
+
+  if (staleMin < RUNNER_STALE_MIN) {
+    if (alert) {
+      await sendTelegram(env, `✅ 집 러너 복구 — 감시 재개\n\n마지막 정상 실행: ${kstLabel(lastOkMs)}`);
+      await env.STATE.delete(RUNNER_ALERT_KEY);
+    }
+    return;
+  }
+  if (alert && Date.now() - alert.last_alert_ms < RUNNER_REPEAT_HOURS * 3_600_000) return;
+
+  await sendTelegram(
+    env,
+    `🖥️ 집 러너 응답 없음 — 감시 중단\n\n` +
+      `마지막 정상 실행: ${kstLabel(lastOkMs)} (${staleMin}분 전)\n\n` +
+      `점검 순서:\n` +
+      `1. PC 전원·절전 여부\n` +
+      `2. PowerShell: wsl -l -v → Ubuntu가 Running인지\n` +
+      `3. Ubuntu: systemctl status 'actions.runner.*'\n\n` +
+      `(복구 전까지 ${RUNNER_REPEAT_HOURS}시간마다 다시 알림)`,
+  );
+  await env.STATE.put(RUNNER_ALERT_KEY, JSON.stringify({ since: run.updated_at, last_alert_ms: Date.now() }));
+}
+
+function kstLabel(ms) {
+  return new Date(ms + 9 * 3_600_000).toISOString().slice(0, 16).replace("T", " ") + " KST";
 }
 
 // PAT EXPIRATION: GitHub responds to fine-grained PAT requests with a
