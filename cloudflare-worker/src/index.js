@@ -617,24 +617,39 @@ async function heartbeatCheck(env) {
 const RUNNER_STALE_MIN = 30;
 const RUNNER_REPEAT_HOURS = 6;
 const RUNNER_ALERT_KEY = "runner_alert";
+// Unfiltered on purpose: with tens of thousands of runs, GitHub answers
+// filtered queries (status=, event=, created= ...) from a capped search that
+// returns an arbitrary match, not the newest — status=success&per_page=1 came
+// back with runs from weeks ago and fired false "runner offline" alerts while
+// every tick was green. The newest 100 runs span ~5h at one tick per 3 min.
+const RUNNER_SCAN_RUNS = 100;
 
-async function runnerCheck(env) {
-  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/watch.yml/runs?status=success&per_page=1`;
-  let run;
+// Returns { lastOkMs, found } — when no success is in the scanned window,
+// lastOkMs is the oldest scanned run (a lower bound) and found is false.
+async function latestRunnerSuccess(env) {
+  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/watch.yml/runs?per_page=${RUNNER_SCAN_RUNS}`;
   try {
     const res = await fetch(url, { headers: ghHeaders(env) });
     if (!res.ok) {
       console.error(`runner check: HTTP ${res.status}`);
-      return;
+      return null;
     }
-    run = (await res.json()).workflow_runs?.[0];
+    const runs = (await res.json()).workflow_runs || [];
+    if (!runs.length) return null;
+    const ok = runs.find((r) => r.conclusion === "success");
+    if (ok) return { lastOkMs: new Date(ok.updated_at).getTime(), found: true };
+    return { lastOkMs: new Date(runs[runs.length - 1].created_at).getTime(), found: false };
   } catch (e) {
     console.error(`runner check: ${e.message}`);
-    return;
+    return null;
   }
-  if (!run) return;
+}
 
-  const lastOkMs = new Date(run.updated_at).getTime();
+async function runnerCheck(env) {
+  const last = await latestRunnerSuccess(env);
+  if (!last) return;
+
+  const { lastOkMs, found } = last;
   const staleMin = Math.floor((Date.now() - lastOkMs) / 60_000);
   const raw = await env.STATE.get(RUNNER_ALERT_KEY);
   const alert = raw ? JSON.parse(raw) : null;
@@ -648,17 +663,18 @@ async function runnerCheck(env) {
   }
   if (alert && Date.now() - alert.last_alert_ms < RUNNER_REPEAT_HOURS * 3_600_000) return;
 
+  const lastOkLabel = found ? `${kstLabel(lastOkMs)} (${staleMin}분 전)` : `${kstLabel(lastOkMs)} 이전 (${staleMin}분 이상)`;
   await sendTelegram(
     env,
     `🖥️ 집 러너 응답 없음 — 감시 중단\n\n` +
-      `마지막 정상 실행: ${kstLabel(lastOkMs)} (${staleMin}분 전)\n\n` +
+      `마지막 정상 실행: ${lastOkLabel}\n\n` +
       `점검 순서:\n` +
       `1. PC 전원·절전 여부\n` +
       `2. PowerShell: wsl -l -v → Ubuntu가 Running인지\n` +
       `3. Ubuntu: systemctl status 'actions.runner.*'\n\n` +
       `(복구 전까지 ${RUNNER_REPEAT_HOURS}시간마다 다시 알림)`,
   );
-  await env.STATE.put(RUNNER_ALERT_KEY, JSON.stringify({ since: run.updated_at, last_alert_ms: Date.now() }));
+  await env.STATE.put(RUNNER_ALERT_KEY, JSON.stringify({ since: new Date(lastOkMs).toISOString(), last_alert_ms: Date.now() }));
 }
 
 function kstLabel(ms) {
