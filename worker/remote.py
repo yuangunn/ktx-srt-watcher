@@ -11,11 +11,18 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any
 
 TIMEOUT_SEC = 10
+
+# The home connection now and then stalls a TLS handshake to Cloudflare
+# (2026-09-30: four ticks died on "GET /config → handshake timed out", and the
+# very next tick each time was fine). One quick retry absorbs that instead of
+# failing the run. HTTP errors are answers, not blips, so they aren't retried.
+RETRY_DELAY_SEC = 2
 
 # Cloudflare's bot protection answers 403 to the default "Python-urllib/x.y"
 # User-Agent before the request ever reaches the Worker, so send our own.
@@ -52,13 +59,17 @@ def _request(path: str, *, method: str = "GET", body: bytes | None = None) -> by
             "User-Agent": USER_AGENT,
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        raise RemoteError(f"{method} {path} → HTTP {e.code}") from e
-    except Exception as e:  # URLError, socket timeout, DNS, ...
-        raise RemoteError(f"{method} {path} → {e}") from e
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            raise RemoteError(f"{method} {path} → HTTP {e.code}") from e
+        except Exception as e:  # URLError, socket timeout, DNS, ...
+            if attempt == 2:
+                raise RemoteError(f"{method} {path} → {e}") from e
+            time.sleep(RETRY_DELAY_SEC)
+    raise AssertionError("unreachable")
 
 
 def fetch_config() -> dict[str, Any] | None:
