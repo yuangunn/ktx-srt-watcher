@@ -13,6 +13,7 @@ from worker import remote
 def _env(monkeypatch):
     monkeypatch.setenv("CF_WORKER_URL", "https://worker.example/")
     monkeypatch.setenv("REMINDER_TOKEN", "tok")
+    monkeypatch.setattr(remote.time, "sleep", lambda _s: None)
 
 
 class _Resp:
@@ -138,6 +139,44 @@ class TestPushState:
         monkeypatch.setattr(remote.urllib.request, "urlopen", _http_error(401))
         with pytest.raises(remote.RemoteError):
             remote.push_state({})
+
+
+class TestRetry:
+    def _flaky(self, monkeypatch, failures: int, exc: Exception):
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] <= failures:
+                raise exc
+            return _Resp(b'{"watches": []}')
+
+        monkeypatch.setattr(remote.urllib.request, "urlopen", fake_urlopen)
+        return calls
+
+    def test_one_handshake_timeout_is_retried(self, monkeypatch):
+        exc = urllib.error.URLError("_ssl.c:1063: The handshake operation timed out")
+        calls = self._flaky(monkeypatch, 1, exc)
+        assert remote.fetch_config() == {"watches": []}
+        assert calls["n"] == 2
+
+    def test_two_timeouts_in_a_row_still_raise(self, monkeypatch):
+        calls = self._flaky(monkeypatch, 2, TimeoutError("timed out"))
+        with pytest.raises(remote.RemoteError, match="timed out"):
+            remote.fetch_config()
+        assert calls["n"] == 2
+
+    def test_http_errors_are_not_retried(self, monkeypatch):
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            raise urllib.error.HTTPError(req.full_url, 500, "err", {}, None)
+
+        monkeypatch.setattr(remote.urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(remote.RemoteError, match="HTTP 500"):
+            remote.fetch_config()
+        assert calls["n"] == 1
 
 
 class TestUserAgent:
