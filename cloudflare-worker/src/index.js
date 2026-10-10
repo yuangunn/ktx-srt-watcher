@@ -119,8 +119,9 @@ async function rotateConfigBackups(env, prevBody) {
 
 // Since the 2026-09-01 KORAIL–SR merger there is no SRT service: its trains
 // run as KTX-산천 and sell through KORAIL. Watches saved before then still say
-// provider "srt", and the watcher and the app each carried an alias to cope.
-// Rewriting them once, here in the store, lets both drop that code. The id is
+// provider "srt". They are rewritten here in the store, so the watcher and
+// the app only ever see korail. It stays on every read because an app tab
+// opened before the rewrite can still PUT its stale copy back. The id is
 // left alone so dedup history, pending holds and auto-reserve flags carry
 // over. Returns the rewritten body, or null when nothing needed changing.
 function migrateLegacyConfig(body) {
@@ -516,7 +517,7 @@ async function processReminders(env) {
 }
 
 function formatReminder(rec, reminder, cancelUrl) {
-  const app = rec.provider === "srt" ? "SR 앱" : "코레일톡";
+  const app = "코레일톡";
   const head = reminder.kind === "final"
     ? `⛔ 결제 마감 약 ${reminder.remaining_min}분 남음 — 마지막 기회`
     : `🔔 결제 마감 약 ${reminder.remaining_min}분 남음`;

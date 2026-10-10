@@ -7,6 +7,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from pydantic import ValidationError
+
 from . import notifier
 from . import pushover
 from . import remote
@@ -41,24 +43,6 @@ RE_ARM_GRACE_MIN = 3
 # Long enough that a transient outage never discards a live record, short
 # enough that stale entries do not pile up.
 STALE_HOLD_HOURS = 24
-
-
-def _merged_provider(w: dict[str, Any]) -> dict[str, Any]:
-    """Route pre-merger SRT watches through the KORAIL adapter, unchanged ids.
-
-    Since 2026-09-01 the SRT service does not exist: its trains run as
-    KTX-산천 and sell through KORAIL. A watch saved before that would
-    otherwise sit on a provider with no adapter — or worse, keep "watching"
-    an API that answers with nothing forever. The id stays as it is so
-    notified_train_ids, pending holds and auto-reserve flags all carry over.
-    """
-    if w.get("provider") != "srt":
-        return w
-    w = dict(w)
-    w["provider"] = "korail"
-    types = [("KTX-산천" if t == "SRT" else t) for t in (w.get("train_types") or [])]
-    w["train_types"] = list(dict.fromkeys(types)) or ["KTX-산천"]
-    return w
 
 
 def _wid(watch_id: str) -> str:
@@ -124,10 +108,6 @@ def main() -> int:
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
     state_mod.prune_past_dates(s, today=now_iso[:10])
-    # Provider "srt" no longer runs, so nothing would ever clear its outage
-    # entries; drop them rather than leave a dead cooldown in state.
-    for bucket in ("login_failures", "search_failures"):
-        (s.get(bucket) or {}).pop("srt", None)
     state_mod.prune_orphan_flags(
         s, [w.get("id") for w in cfg.get("watches", []) if w.get("id")]
     )
@@ -139,6 +119,21 @@ def main() -> int:
         # log it rather than fail a run that did its job.
         log.error("상태 저장 실패: %s", e)
     return 0
+
+
+def _load_active_watches(config: dict[str, Any]) -> list[Watch]:
+    """Active watches that validate. A malformed one is logged and skipped:
+    one bad entry must not stop every other watch from being polled."""
+    active: list[Watch] = []
+    for w in config.get("watches", []):
+        if not w.get("active", True):
+            continue
+        try:
+            active.append(Watch.model_validate(w))
+        except ValidationError as e:
+            # Errors only, never the id: Actions logs on this repo are public.
+            log.error("워치 형식 오류로 건너뜀: %s", e.errors(include_input=False, include_url=False))
+    return active
 
 
 def run_watches(
@@ -191,10 +186,7 @@ def run_watches(
     state_mod.mark_run(state, now_iso)
     _after_poll(config, state, now_iso)
 
-    active = [
-        Watch.model_validate(_merged_provider(w))
-        for w in config.get("watches", []) if w.get("active", True)
-    ]
+    active = _load_active_watches(config)
     by_provider: dict[str, list[Watch]] = {}
     for w in active:
         by_provider.setdefault(w.provider, []).append(w)

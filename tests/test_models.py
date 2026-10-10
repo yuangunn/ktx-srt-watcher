@@ -62,13 +62,13 @@ class TestWatch:
     def test_passengers_default_to_one_adult(self):
         minimal = {
             "id": "x",
-            "provider": "srt",
+            "provider": "korail",
             "from": "수서",
             "to": "부산",
             "date": "2026-05-15",
             "time_min": "09:00",
             "time_max": "12:00",
-            "train_types": ["SRT"],
+            "train_types": ["KTX-산천"],
         }
         watch = Watch.model_validate(minimal)
         assert watch.passengers.adult == 1
@@ -97,9 +97,9 @@ class TestTrain:
 
     def test_total_seats_sums_general_and_special(self):
         train = Train(
-            provider="srt",
+            provider="korail",
             train_no="301",
-            train_type="SRT",
+            train_type="KTX-산천",
             dep_station="수서",
             arr_station="부산",
             date="2026-05-15",

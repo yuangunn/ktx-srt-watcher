@@ -251,37 +251,27 @@ class TestRunWatches:
         assert recorder.calls == []
         assert s["last_run"] == "t"  # the run itself survived
 
-    def test_legacy_srt_watch_rides_the_korail_adapter(self):
-        # Saved before the 2026-09-01 merger. Its id must not change — dedup
-        # history, pending holds and auto-reserve flags are keyed on it — but
-        # it must be searched by the KORAIL adapter with the type its trains
-        # now carry, KTX-산천, because provider "srt" no longer exists.
+    def test_malformed_watch_is_skipped_not_fatal(self):
+        # A provider the worker no longer knows (pre-merger "srt", should one
+        # ever slip past the store migration) must not take the good watch
+        # down with it.
         cfg = {
             "version": 1,
-            "watches": [_watch_dict(
-                id="수서-부산-legacy", provider="srt",
-                **{"from": "수서", "to": "부산", "train_types": ["SRT"]},
-            )],
+            "watches": [
+                _watch_dict(id="old", provider="srt"),
+                _watch_dict(id="good"),
+            ],
         }
-        korail = FakeProvider("korail", search_results=[
-            _train(train_type="KTX-산천", raw_id="r1"),
-        ])
-        recorder = NotifyRecorder()
+        korail = FakeProvider("korail")
         s = state_mod.empty_state()
         main.run_watches(
             cfg, s,
             providers={"korail": korail},
             creds={"korail": ("u", "p")},
-            notify_fn=recorder,
+            notify_fn=NotifyRecorder(),
             now_iso="t",
         )
-        assert len(korail.searches) == 1
-        searched = korail.searches[0]
-        assert searched.id == "수서-부산-legacy"          # identity preserved
-        assert searched.provider == "korail"              # adapter rerouted
-        assert searched.train_types == ["KTX-산천"]       # SRT → KTX-산천
-        assert [c[0].id for c in recorder.calls] == ["수서-부산-legacy"]
-        assert s["watches"]["수서-부산-legacy"]["notified_train_ids"] == ["r1"]
+        assert [w.id for w in korail.searches] == ["good"]
 
     def _run_with_broken_login(self, monkeypatch, settings):
         """Run one poll whose only provider fails to log in, capturing the

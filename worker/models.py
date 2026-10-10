@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PrivateAttr, 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 
-Provider = Literal["korail", "srt"]
+# Only KORAIL since the 2026-09-01 merger. Pre-merger "srt" watches were
+# rewritten in the store by the CF Worker's GET /config.
+Provider = Literal["korail"]
 SeatClass = Literal["general", "special", "any"]
 
 

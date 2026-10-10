@@ -257,7 +257,7 @@ def notify_auto_reserve_rearmed(
     send_telegram(bot_token, chat_id, text, session=session)
 
 
-PROVIDER_LABEL = {"korail": "코레일", "srt": "SRT"}
+PROVIDER_LABEL = {"korail": "코레일"}
 
 
 def format_login_failed(provider: str, error_msg: str) -> str:
