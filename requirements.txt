@@ -12,5 +12,5 @@
 pykorail==0.2.2
 curl-cffi==0.16.3
 requests>=2.31.0
-pydantic>=2.5.0
+pydantic>=2.13.5
 pytest>=8.0.0
