@@ -60,8 +60,9 @@ GitHub 호스팅. 설치·보안 수칙: `docs/SELF_HOSTED_RUNNER.md` — 특히
   state(`korail_device_profile`)에 저장해 재사용
 - `search()`는 `time_min~time_max` 범위, `train_types` 일치, **잔여석 1석 이상**인 열차만 반환
 - 로그인 세션은 함수 호출 단위. Actions 매 실행마다 새로 로그인
-- **구 SRT 워치 호환**: `provider: "srt"` 워치는 main이 id 변경 없이 korail로
-  별칭 처리하고 `train_types`의 "SRT"를 "KTX-산천"으로 매핑한다 (`_merged_provider`)
+- **구 SRT 워치**: `provider: "srt"` 워치는 CF Worker의 `GET /config`가 KV에서
+  korail로 바꿔 저장한다(id 유지, "SRT"→"KTX-산천", `migrateLegacyConfig`).
+  워커·앱은 korail만 안다. 형식이 틀린 워치는 main이 로그 남기고 건너뛴다
 
 ### `worker/matcher.py`
 config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌석만 반환 (state의 `notified_train_ids`와 비교).

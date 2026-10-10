@@ -29,11 +29,8 @@
   --logink: #E5E8EB;
   --scrim: rgba(10, 15, 25, .42);
   --kor-grad: linear-gradient(135deg, #3182F6, #69A7FF);
-  --srt-grad: linear-gradient(135deg, #F04452, #FF7E88);
   --kor-shadow: rgba(49, 130, 246, .4);
-  --srt-shadow: rgba(240, 68, 82, .4);
   --kor-tint: #3182F6;
-  --srt-tint: #F04452;
   --chip-time-bg: #E8F1FE;
   --chip-time-ink: #1B64DA;
   --chip-pax-bg: #E4F7EF;
@@ -309,7 +306,6 @@ hr { border: 0; margin: 0; }
   font-size: 15px; font-weight: 800; letter-spacing: -.01em;
 }
 .watch[data-provider="korail"] .watch__stamp { background: var(--kor-grad); box-shadow: 0 4px 10px var(--kor-shadow); }
-.watch[data-provider="srt"]   .watch__stamp { background: var(--srt-grad); box-shadow: 0 4px 10px var(--srt-shadow); }
 .watch__headmain { flex: 1; min-width: 0; }
 .watch__tags { display: flex; align-items: center; gap: 7px; }
 .watch__route {
@@ -386,7 +382,6 @@ hr { border: 0; margin: 0; }
 }
 .badge--provider { text-transform: uppercase; }
 .watch[data-provider="korail"] .badge--provider { color: var(--kor-tint); }
-.watch[data-provider="srt"]   .badge--provider { color: var(--srt-tint); }
 .badge--auto-reserve {
   font-size: 10px; font-weight: 800; letter-spacing: .03em;
   color: var(--ember);
@@ -875,7 +870,6 @@ hr { border: 0; margin: 0; }
   box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
 }
 .seg__opt:has(input[value="korail"]:checked) { background: var(--kor-grad); color: #fff; box-shadow: 0 2px 6px var(--kor-shadow); }
-.seg__opt:has(input[value="srt"]:checked) { background: var(--srt-grad); color: #fff; box-shadow: 0 2px 6px var(--srt-shadow); }
 .seg__opt:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* train-type chips */

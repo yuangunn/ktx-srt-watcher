@@ -181,7 +181,7 @@ class TestFormatSummary:
     def test_summary_lists_each_watch_route_and_window(self):
         watches = [
             _watch(),
-            _watch(**{"id": "w2", "from": "수서", "to": "부산", "provider": "srt", "train_types": ["SRT"]}),
+            _watch(**{"id": "w2", "from": "수서", "to": "부산", "train_types": ["KTX-산천"]}),
         ]
         msg = notifier.format_summary(watches)
         assert "확인 완료" in msg
@@ -189,7 +189,7 @@ class TestFormatSummary:
         assert "서울→부산" in msg
         assert "수서→부산" in msg
         assert "[KTX]" in msg
-        assert "[SRT]" in msg
+        assert "[KTX-산천]" in msg
 
 
 class TestNotifySummary:

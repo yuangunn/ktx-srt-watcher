@@ -62,9 +62,6 @@ const RAIL_DATA = {
     ],
   },
 };
-// 2026-09-01 통합 전에 저장된 워치·최근기록은 provider가 'srt'일 수 있다.
-// 데이터는 하나의 코레일 목록으로 흡수됐으므로 전부 korail로 읽는다.
-function railProvider(p) { return p === 'srt' ? 'korail' : (p || 'korail'); }
 
 // ----- storage --------------------------------------------------------------
 
@@ -91,13 +88,27 @@ const RECENT_ROUTES_MAX = 5;
 function loadRecent() {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '{}');
-    return { stations: v.stations || {}, routes: Array.isArray(v.routes) ? v.routes : [] };
+    return migrateRecent({ stations: v.stations || {}, routes: Array.isArray(v.routes) ? v.routes : [] });
   } catch {
     return { stations: {}, routes: [] };
   }
 }
+// Recents saved before the 2026-09-01 merger sit under provider 'srt'. Fold
+// them into korail and write back once, so nothing else needs to know.
+function migrateRecent(r) {
+  const old = r.stations.srt;
+  if (!old && !r.routes.some(x => x.provider === 'srt')) return r;
+  r.stations.korail = [...new Set([...(r.stations.korail || []), ...(old || [])])]
+    .slice(0, RECENT_STATIONS_MAX);
+  delete r.stations.srt;
+  const seen = new Set();
+  r.routes = r.routes
+    .map(x => (x.provider === 'srt' ? { ...x, provider: 'korail' } : x))
+    .filter(x => { const k = `${x.provider}|${x.from}|${x.to}`; return !seen.has(k) && seen.add(k); });
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(r)); } catch { /* retried next load */ }
+  return r;
+}
 function rememberRoute(provider, from, to) {
-  provider = railProvider(provider);
   if (!from || !to) return;
   const r = loadRecent();
   const list = (r.stations[provider] || []).filter(s => s !== from && s !== to);
@@ -379,15 +390,13 @@ function stationPicker() {
     const html = [];
 
     if (!q) {
-      const routes = recent.routes.filter(r => railProvider(r.provider) === ctx.provider);
+      const routes = recent.routes.filter(r => r.provider === ctx.provider);
       if (routes.length) {
         html.push('<div class="station-group">최근 경로</div>');
         routes.forEach(r => html.push(
           row(`${r.from} → ${r.to}`, '둘 다 채우기', `${r.from}|${r.to}`, 'route')));
       }
-      const legacy = ctx.provider === 'korail' ? (recent.stations.srt || []) : [];
-      const stations = [...new Set([...(recent.stations[ctx.provider] || []), ...legacy])]
-        .filter(s => all.includes(s));
+      const stations = (recent.stations[ctx.provider] || []).filter(s => all.includes(s));
       if (stations.length) {
         html.push('<div class="station-group">최근 역</div>');
         stations.forEach(s => html.push(row(s, s === ctx.other ? '반대편에 선택됨' : '', s)));
@@ -413,7 +422,7 @@ function stationPicker() {
 
   return {
     open(provider, which, other, cb) {
-      ctx = { provider: railProvider(provider), which, other: other || '' };
+      ctx = { provider, which, other: other || '' };
       onPick = cb;
       title.textContent = which === 'from' ? '출발역' : '도착역';
       search.value = '';
@@ -426,7 +435,6 @@ function stationPicker() {
 }
 
 function fillTrainTypeChips(provider, group) {
-  provider = railProvider(provider);
   group.className = `check-group check-group--${provider}`;
   const legend = '<legend class="field__label">열차 종류</legend>';
   const chips = RAIL_DATA[provider].train_types.map(t => `
@@ -535,14 +543,13 @@ function groupTrainTypes(types) {
 
 // Short label shown inside the gradient stamp avatar.
 function stampLabel(watch) {
-  // Pre-merger SRT watches now hunt KTX-산천 trains; label them as such.
-  if (watch.provider === 'srt') return '산천';
   const types = watch.train_types || [];
   // Prefer a distinctive sub-brand when the watch is exclusively that type.
   if (types.length === 1) {
     const t = types[0];
     if (t === 'KTX-이음') return '이음';
     if (t === 'KTX-청룡') return '청룡';
+    if (t === 'KTX-산천') return '산천';
     if (t === 'ITX-새마을' || t === 'ITX-청춘') return 'ITX';
     if (t === '무궁화호') return '무궁';
     if (t === '새마을호') return '새마';
@@ -557,7 +564,7 @@ function renderWatchCard(watch, state) {
   node.dataset.provider = watch.provider;
   node.dataset.active = String(watch.active);
   $('.watch__stamp', node).textContent = stampLabel(watch);
-  $('.badge--provider', node).textContent = watch.provider === 'srt' ? '구 SRT' : 'KORAIL';
+  $('.badge--provider', node).textContent = 'KORAIL';
   // Auto-reserve badge. If the worker self-disabled it after a successful
   // reservation (tracked in state.auto_reserve_disabled), show a muted
   // "완료" badge so the user knows it fired and can re-enable if needed.
@@ -1078,7 +1085,7 @@ class App {
     // succeeds, last_run advances, every other row stays green while nothing
     // is actually being watched. Two buckets: login (can't get in) and
     // search (in, but every query refused — how the 코레일+ 전환 bit us).
-    const label = { korail: '코레일', srt: '구 SRT' };
+    const label = { korail: '코레일' };
     const loginFailed = Object.keys(this.state?.login_failures || {});
     const searchFailed = Object.keys(this.state?.search_failures || {});
     if (loginFailed.length) {
@@ -1651,8 +1658,6 @@ class App {
     form.reset();
     this._editingWatchId = watchId || null;
     const editing = watchId ? this.config.watches.find(w => w.id === watchId) : null;
-    // Editing a pre-merger SRT watch re-saves it as a korail watch; the
-    // hidden provider field is always korail.
     fillTrainTypeChips('korail', $('#train-type-group'));
     this._setStation('from', editing?.from || '');
     this._setStation('to', editing?.to || '');
@@ -1665,7 +1670,7 @@ class App {
       form.querySelector('input[name="senior"]').value = editing.passengers?.senior ?? 0;
       const seatRadio = form.querySelector(`input[name="seat_class"][value="${editing.seat_class}"]`);
       if (seatRadio) seatRadio.checked = true;
-      const editTypes = (editing.train_types || []).map(t => t === 'SRT' ? 'KTX-산천' : t);
+      const editTypes = editing.train_types || [];
       form.querySelectorAll('input[name="train_type"]').forEach(c => {
         c.checked = editTypes.includes(c.value);
       });

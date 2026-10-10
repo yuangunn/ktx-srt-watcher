@@ -106,6 +106,6 @@ class TestPushoverIsOptIn:
         sent = []
         monkeypatch.setattr(notifier, "send_telegram",
                             lambda tok, cid, text, **kw: sent.append(text))
-        notifier.notify_login_failed("srt", "locked")
+        notifier.notify_login_failed("korail", "locked")
         assert len(sent) == 1
-        assert "SRT 로그인 실패" in sent[0]
+        assert "코레일 로그인 실패" in sent[0]
