@@ -117,6 +117,32 @@ async function rotateConfigBackups(env, prevBody) {
   await env.STATE.put(`${CONFIG_KEY}:bak:0`, prevBody);
 }
 
+// Since the 2026-09-01 KORAIL–SR merger there is no SRT service: its trains
+// run as KTX-산천 and sell through KORAIL. Watches saved before then still say
+// provider "srt", and the watcher and the app each carried an alias to cope.
+// Rewriting them once, here in the store, lets both drop that code. The id is
+// left alone so dedup history, pending holds and auto-reserve flags carry
+// over. Returns the rewritten body, or null when nothing needed changing.
+function migrateLegacyConfig(body) {
+  let config;
+  try {
+    config = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const watches = Array.isArray(config?.watches) ? config.watches : [];
+  let changed = false;
+  for (const w of watches) {
+    if (w?.provider !== "srt") continue;
+    w.provider = "korail";
+    const types = (w.train_types || []).map((t) => (t === "SRT" ? "KTX-산천" : t));
+    w.train_types = [...new Set(types)];
+    if (!w.train_types.length) w.train_types = ["KTX-산천"];
+    changed = true;
+  }
+  return changed ? JSON.stringify(config) : null;
+}
+
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "*/3 * * * *") {
@@ -201,6 +227,14 @@ export default {
       }
       const stored = await env.STATE.get(CONFIG_KEY);
       if (!stored) return text("no config yet\n", 404);
+      // Both readers poll this every few minutes, so the first read after a
+      // deploy migrates the store; every later read finds nothing to do.
+      const migrated = migrateLegacyConfig(stored);
+      if (migrated) {
+        await rotateConfigBackups(env, stored);
+        await env.STATE.put(CONFIG_KEY, migrated);
+        return json(migrated);
+      }
       return json(stored);
     }
     // The PWA is the only writer.  Previous versions are kept in a small ring
