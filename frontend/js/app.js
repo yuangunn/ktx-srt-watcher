@@ -996,6 +996,9 @@ class App {
     if (wait) wait.checked = !!s.allow_waiting_list;
     const renotify = $('#renotify-toggle');
     if (renotify) renotify.checked = !!s.renotify_while_available;
+    const urgent = $('#urgent-poll-toggle');
+    // Default on: the worker treats a missing key as enabled.
+    if (urgent) urgent.checked = s.urgent_poll_enabled !== false;
     const loginPush = $('#login-push-toggle');
     if (loginPush) loginPush.checked = !!s.login_alert_pushover;
     this._renderPollConfig(s);
@@ -1280,7 +1283,14 @@ class App {
       const sourcePrefix = this.cronSource === 'cf' ? 'CF · ' : '';
       let label, remaining;
       const nextAt = this.state?.next_poll_at ? Date.parse(this.state.next_poll_at) : NaN;
-      if (mode === 'range' || mode === 'choices') {
+      if (this.state?.urgent_cadence) {
+        // A watch departs within two days: the worker switched itself to a
+        // tighter randomized cadence and stored the rolled target.
+        label = `${sourcePrefix}출발 임박 · 랜덤 10~15분`;
+        remaining = Number.isFinite(nextAt)
+          ? nextAt - Date.now()
+          : nextTickEpoch(this.cronIntervalMin) - Date.now();
+      } else if (mode === 'range' || mode === 'choices') {
         // Randomized cadence: the worker stores the rolled target as
         // state.next_poll_at, so the countdown reflects the real next poll.
         label = mode === 'range'
@@ -1339,6 +1349,13 @@ class App {
       renotify.addEventListener('change', async () => {
         ensure().renotify_while_available = renotify.checked;
         await this._save(`settings: renotify_while_available = ${renotify.checked}`);
+      });
+    }
+    const urgent = $('#urgent-poll-toggle');
+    if (urgent) {
+      urgent.addEventListener('change', async () => {
+        ensure().urgent_poll_enabled = urgent.checked;
+        await this._save(`settings: urgent_poll_enabled = ${urgent.checked}`);
       });
     }
     const loginPush = $('#login-push-toggle');
