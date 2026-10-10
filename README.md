@@ -374,6 +374,9 @@ ktx-srt-watcher/
 │   │   ├── base.py               # Provider Protocol
 │   │   └── korail.py             # 유일한 어댑터 (pykorail — 구 SRT 포함)
 │   ├── matcher.py
+│   ├── reservations.py           # 자동 임시예약 + 지난 예약 정산
+│   ├── reminders.py              # 결제 마감 리마인더 (CF Worker)
+│   ├── logsafe.py                # 로그용 워치 핸들 (ID 비노출)
 │   ├── notifier.py               # 텔레그램
 │   ├── pushover.py               # 무음/방해금지를 뚫는 긴급 알림
 │   ├── models.py
@@ -381,7 +384,7 @@ ktx-srt-watcher/
 │   ├── gate.py                   # pip install 전에 폴링 여부 결정
 │   ├── remote.py                 # CF KV의 config/state/mode 읽기/쓰기
 │   └── state.py                  # state 딕셔너리 조작
-├── tests/                        # pytest, 280
+├── tests/                        # pytest, 290
 ├── frontend/                     # PWA
 │   ├── index.html
 │   ├── DESIGN.md                 # 디자인 시스템 (google-labs/design.md format)

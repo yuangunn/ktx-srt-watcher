@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from worker.models import Train, Watch
-from worker import notifier
+from worker import notifier, reminders
 
 
 def _watch(**overrides) -> Watch:
@@ -359,14 +359,14 @@ class TestScheduleReminders:
         monkeypatch.delenv("CF_WORKER_URL", raising=False)
         monkeypatch.setenv("REMINDER_TOKEN", "t")
         session = FakeHttpSession()
-        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        reminders.schedule_reminders(_watch(), _train(), _reservation(), session=session)
         assert session.calls == []
 
     def test_skipped_when_token_missing(self, monkeypatch):
         monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev")
         monkeypatch.delenv("REMINDER_TOKEN", raising=False)
         session = FakeHttpSession()
-        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        reminders.schedule_reminders(_watch(), _train(), _reservation(), session=session)
         assert session.calls == []
 
     def test_skipped_when_already_existed(self, monkeypatch):
@@ -378,7 +378,7 @@ class TestScheduleReminders:
             provider="korail", reservation_id="(기존)", train_no="045",
             already_existed=True,
         )
-        notifier.schedule_reminders(_watch(), _train(), existing, session=session)
+        reminders.schedule_reminders(_watch(), _train(), existing, session=session)
         assert session.calls == []
 
     def test_skipped_when_no_deadline(self, monkeypatch):
@@ -390,14 +390,14 @@ class TestScheduleReminders:
             provider="korail", reservation_id="ABC", train_no="045",
             expires_at=None,
         )
-        notifier.schedule_reminders(_watch(), _train(), no_deadline, session=session)
+        reminders.schedule_reminders(_watch(), _train(), no_deadline, session=session)
         assert session.calls == []
 
     def test_posts_payload_with_bearer(self, monkeypatch):
         monkeypatch.setenv("CF_WORKER_URL", "https://x.workers.dev/")  # trailing slash
         monkeypatch.setenv("REMINDER_TOKEN", "secret")
         session = FakeHttpSession()
-        notifier.schedule_reminders(_watch(), _train(), _reservation(), session=session)
+        reminders.schedule_reminders(_watch(), _train(), _reservation(), session=session)
         assert len(session.calls) == 1
         c = session.calls[0]
         assert c["url"] == "https://x.workers.dev/reminder/schedule"
