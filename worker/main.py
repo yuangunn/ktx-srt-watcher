@@ -16,8 +16,8 @@ from .adapters.korail import KorailProvider
 from .matcher import find_new_trains
 from .models import Reservation, Train, Watch
 from .throttle import (
-    should_throttle as _should_throttle,
-    set_next_poll as _set_next_poll,
+    after_poll as _after_poll,
+    skip_poll as _skip_poll,
     parse_dt as _parse_dt,
 )
 
@@ -158,7 +158,6 @@ def run_watches(
     event_name: str | None = None,
 ) -> None:
     settings_pre = config.get("settings") or {}
-    poll_interval_min = int(settings_pre.get("poll_interval_min") or 0)
     allow_waiting_list = bool(settings_pre.get("allow_waiting_list", False))
     renotify = bool(settings_pre.get("renotify_while_available", False))
     quiet_start = settings_pre.get("quiet_hours_start") or None
@@ -183,15 +182,14 @@ def run_watches(
     #   fixed   — epoch-bucket cadence at poll_interval_min (default)
     #   range   — random minutes in [lo, hi] each gap (anti-bot)
     #   choices — random pick from a list of minutes each gap (anti-bot)
-    # Randomized modes store the rolled target as state.next_poll_at.
-    poll_mode = settings_pre.get("poll_interval_mode") or "fixed"
-    if is_automated_pre and _should_throttle(
-        poll_mode, poll_interval_min, settings_pre, state, now_iso
-    ):
+    # Randomized modes store the rolled target as state.next_poll_at. When a
+    # watch departs within a couple of days the cadence tightens on its own
+    # (throttle.effective_cadence).
+    if is_automated_pre and _skip_poll(config, state, now_iso):
         return
 
     state_mod.mark_run(state, now_iso)
-    _set_next_poll(poll_mode, settings_pre, state, now_iso)
+    _after_poll(config, state, now_iso)
 
     active = [
         Watch.model_validate(_merged_provider(w))

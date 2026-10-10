@@ -129,7 +129,7 @@ CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
 1. **Phase 1**: korail/srt adapter, matcher, notifier, state, workflow → 알림까지
 2. **Phase 2**: PWA 기본 (목록/추가/삭제)
 3. **Phase 3**: auto_reserve (좌석 선점) 옵션. 결제는 절대 안 함
-4. **Phase 4**: 동적 cron 간격 (명절 임박 시 자동 단축)
+4. **Phase 4**: 동적 cron 간격 — 출발 D-2~당일 워치가 있으면 랜덤 10~15분으로 자동 단축 (`throttle.effective_cadence`, `urgent_poll_enabled`)
 
 ## 코드 스타일
 - pydantic v2, 타입 힌트 필수
