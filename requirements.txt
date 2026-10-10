@@ -2,7 +2,15 @@
 # fingerprints the TLS handshake, so it rides on curl-cffi impersonation —
 # the reason patching the old korail2 could never work. MIT, on PyPI.
 # SRTrain is gone with the SRT service itself (app and API closed 2026-08-31).
-pykorail>=0.2.0
+#
+# Pinned exactly, together with curl-cffi (the TLS impersonation layer it
+# rides on): the home runner installs on every poll, so a floating range let
+# any new release go live untested. Dependabot opens a PR per new version and
+# tests.yml runs against it first. CI cannot reach the live backend (it
+# refuses datacenter IPs), so after merging a bump watch for a 감시 중단
+# alert, or dispatch api-probe on korail-home.
+pykorail==0.2.2
+curl-cffi==0.16.3
 requests>=2.31.0
 pydantic>=2.5.0
 pytest>=8.0.0

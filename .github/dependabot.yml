@@ -1,0 +1,27 @@
+# Dependency bumps arrive as PRs so tests.yml runs before anything reaches
+# the home runner. pykorail and curl-cffi are pinned in requirements.txt for
+# exactly this reason — see the comment there.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # The two move together: pykorail's fingerprints are tuned against a
+      # curl-cffi release, so test them as one change.
+      korail-client:
+        patterns: ["pykorail", "curl-cffi", "curl_cffi"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
