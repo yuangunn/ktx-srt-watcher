@@ -1,69 +1,46 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from pydantic import ValidationError
 
 from . import notifier
 from . import pushover
+from . import reminders
 from . import remote
+from . import reservations
 from . import state as state_mod
-from .adapters.base import Provider, journey_key
+from .adapters.base import Provider
 from .adapters.korail import KorailProvider
+from .logsafe import wid as _wid
 from .matcher import find_new_trains
-from .models import Reservation, Train, Watch
+from .models import Train, Watch
+from .reservations import (
+    ReserveFailureFn,
+    ReserveSuccessFn,
+    ScheduleRemindersFn,
+)
 from .throttle import (
     after_poll as _after_poll,
     skip_poll as _skip_poll,
-    parse_dt as _parse_dt,
 )
 
 log = logging.getLogger("ticket_watcher")
 
 NotifyFn = Callable[..., None]   # (Watch, list[Train], *, silent: bool=False)
 SummaryFn = Callable[..., None]  # (list[Watch], *, silent: bool=False)
-ReserveSuccessFn = Callable[[Watch, Train, "Reservation"], None]
-ReserveFailureFn = Callable[[Watch, Train, str], None]
-ScheduleRemindersFn = Callable[[Watch, Train, "Reservation"], None]
 
-# How many candidate trains to attempt reserving when the first one(s) are
-# already taken. Caps the burst of API calls into Korail/SRT per run.
-MAX_RESERVE_CANDIDATES = 3
-
-# Grace period after a hold's payment deadline before we declare it lapsed and
-# re-arm auto-reserve. Covers clock skew and late payment propagation.
-RE_ARM_GRACE_MIN = 3
-
-# How long a hold we cannot judge is kept before being dropped from state.
-# Long enough that a transient outage never discards a live record, short
-# enough that stale entries do not pile up.
-STALE_HOLD_HOURS = 24
-
-
-def _wid(watch_id: str) -> str:
-    """A log handle for a watch — never the watch id itself.
-
-    Watch ids read like "부산-동탄-20260817-wpvm": origin, destination and
-    travel date in the clear. Actions logs on a public repo are readable by
-    anyone without signing in, so printing the id publishes exactly what moving
-    config out of git into CF KV was meant to hide — when the user's home is
-    empty.
-
-    The trailing random token is enough to line a log line up with the app and
-    discloses nothing by itself. Ids in another shape fall back to a digest.
-    """
-    wid = (watch_id or "").strip()
-    if not wid:
-        return "?"
-    tail = wid.rsplit("-", 1)[-1]
-    if tail != wid and tail.isalnum() and not tail.isdigit():
-        return tail
-    return hashlib.sha256(wid.encode("utf-8")).hexdigest()[:8]
+# Events that obey the throttle. "push" stays in the automated set for
+# safety: config no longer lives in git so saving settings makes no commit at
+# all, but any future push-driven run should obey the throttle rather than
+# force an off-cadence poll. Only manual "지금 확인" (workflow_dispatch)
+# bypasses it.
+AUTOMATED_EVENTS = ("schedule", "repository_dispatch", "push")
 
 
 def main() -> int:
@@ -86,27 +63,34 @@ def main() -> int:
     # Only the phone knows whether the user is home; the mode decides whether
     # an urgent alert may override the mute switch.
     pushover.set_mode(remote.fetch_mode())
-    creds = load_credentials()
-    # One device identity across runs: a fresh random profile on every poll is
-    # what looks like a bot farm. Minted once, kept in state.
-    korail = KorailProvider(device_profile_id=s.get("korail_device_profile"))
-    s["korail_device_profile"] = korail.device_profile_id
-    providers: dict[str, Provider] = {"korail": korail}
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     run_watches(
         cfg, s,
-        providers=providers,
-        creds=creds,
+        providers=_providers(s),
+        creds=load_credentials(),
         notify_fn=notifier.notify,
         notify_summary_fn=notifier.notify_summary,
         notify_reserve_success_fn=notifier.notify_reservation_success,
         notify_reserve_failure_fn=notifier.notify_reservation_failure,
-        schedule_reminders_fn=notifier.schedule_reminders,
+        schedule_reminders_fn=reminders.schedule_reminders,
         notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
         notify_auto_reserve_rearmed_fn=notifier.notify_auto_reserve_rearmed,
         now_iso=now_iso,
         event_name=os.environ.get("GITHUB_EVENT_NAME"),
     )
+    _save_state(cfg, s, now_iso)
+    return 0
+
+
+def _providers(state: dict[str, Any]) -> dict[str, Provider]:
+    # One device identity across runs: a fresh random profile on every poll is
+    # what looks like a bot farm. Minted once, kept in state.
+    korail = KorailProvider(device_profile_id=state.get("korail_device_profile"))
+    state["korail_device_profile"] = korail.device_profile_id
+    return {"korail": korail}
+
+
+def _save_state(cfg: dict[str, Any], s: dict[str, Any], now_iso: str) -> None:
     state_mod.prune_past_dates(s, today=now_iso[:10])
     state_mod.prune_orphan_flags(
         s, [w.get("id") for w in cfg.get("watches", []) if w.get("id")]
@@ -118,7 +102,6 @@ def main() -> int:
         # write costs dedup history (a seat may be re-notified next run), so
         # log it rather than fail a run that did its job.
         log.error("상태 저장 실패: %s", e)
-    return 0
 
 
 def _load_active_watches(config: dict[str, Any]) -> list[Watch]:
@@ -134,6 +117,49 @@ def _load_active_watches(config: dict[str, Any]) -> list[Watch]:
             # Errors only, never the id: Actions logs on this repo are public.
             log.error("워치 형식 오류로 건너뜀: %s", e.errors(include_input=False, include_url=False))
     return active
+
+
+@dataclass(frozen=True)
+class _RunOptions:
+    """What the settings and the trigger decide for this run."""
+    allow_waiting: bool
+    renotify: bool
+    login_push: bool
+    silent: bool
+    summarize_empty: bool
+
+
+@dataclass(frozen=True)
+class _Hooks:
+    """The notification side effects, injected so tests can record them."""
+    notify: NotifyFn
+    summary: SummaryFn | None = None
+    reserve_success: ReserveSuccessFn | None = None
+    reserve_failure: ReserveFailureFn | None = None
+    schedule_reminders: ScheduleRemindersFn | None = None
+    auto_reserve_disabled: Callable[[Watch], None] | None = None
+    auto_reserve_rearmed: Callable[[Watch], None] | None = None
+
+
+def _run_options(settings: dict[str, Any], event_name: str | None, now_iso: str) -> _RunOptions:
+    is_manual = event_name == "workflow_dispatch"
+    quiet_start = settings.get("quiet_hours_start") or None
+    quiet_end = settings.get("quiet_hours_end") or None
+    return _RunOptions(
+        allow_waiting=bool(settings.get("allow_waiting_list", False)),
+        renotify=bool(settings.get("renotify_while_available", False)),
+        # Default off: a broken login is not actionable until morning, so it
+        # goes to Telegram only unless the user asks for it loud.
+        login_push=bool(settings.get("login_alert_pushover", False)),
+        # Quiet hours suppress the notification *sound*, not the message.
+        # Manual triggers (지금 확인) bypass quiet hours — user explicitly
+        # asked. Reservation success/failure/reminders also bypass downstream.
+        silent=not is_manual and notifier.is_quiet_hour_kst(now_iso, quiet_start, quiet_end),
+        summarize_empty=is_manual or (
+            bool(settings.get("notify_empty_on_cron", False))
+            and event_name in AUTOMATED_EVENTS
+        ),
+    )
 
 
 def run_watches(
@@ -152,27 +178,6 @@ def run_watches(
     notify_auto_reserve_rearmed_fn: Callable[[Watch], None] | None = None,
     event_name: str | None = None,
 ) -> None:
-    settings_pre = config.get("settings") or {}
-    allow_waiting_list = bool(settings_pre.get("allow_waiting_list", False))
-    renotify = bool(settings_pre.get("renotify_while_available", False))
-    quiet_start = settings_pre.get("quiet_hours_start") or None
-    quiet_end = settings_pre.get("quiet_hours_end") or None
-    # Default off: a broken login is not actionable until morning, so it goes
-    # to Telegram only unless the user asks for it loud.
-    login_push = bool(settings_pre.get("login_alert_pushover", False))
-    is_manual_pre = event_name == "workflow_dispatch"
-    # "push" stays in the automated set for safety: config no longer lives in
-    # git so saving settings makes no commit at all, but any future push-driven
-    # run should obey the throttle rather than force an off-cadence poll. Only
-    # manual "지금 확인" (workflow_dispatch) bypasses it.
-    is_automated_pre = event_name in ("schedule", "repository_dispatch", "push")
-    # Quiet hours suppress the notification *sound*, not the message.
-    # Manual triggers (지금 확인) bypass quiet hours — user explicitly
-    # asked. Reservation success/failure/reminders also bypass downstream.
-    silent_now = (
-        not is_manual_pre
-        and notifier.is_quiet_hour_kst(now_iso, quiet_start, quiet_end)
-    )
     # Poll throttle. Three modes (settings.poll_interval_mode):
     #   fixed   — epoch-bucket cadence at poll_interval_min (default)
     #   range   — random minutes in [lo, hi] each gap (anti-bot)
@@ -180,12 +185,21 @@ def run_watches(
     # Randomized modes store the rolled target as state.next_poll_at. When a
     # watch departs within a couple of days the cadence tightens on its own
     # (throttle.effective_cadence).
-    if is_automated_pre and _skip_poll(config, state, now_iso):
+    if event_name in AUTOMATED_EVENTS and _skip_poll(config, state, now_iso):
         return
-
     state_mod.mark_run(state, now_iso)
     _after_poll(config, state, now_iso)
 
+    opts = _run_options(config.get("settings") or {}, event_name, now_iso)
+    hooks = _Hooks(
+        notify=notify_fn,
+        summary=notify_summary_fn,
+        reserve_success=notify_reserve_success_fn,
+        reserve_failure=notify_reserve_failure_fn,
+        schedule_reminders=schedule_reminders_fn,
+        auto_reserve_disabled=notify_auto_reserve_disabled_fn,
+        auto_reserve_rearmed=notify_auto_reserve_rearmed_fn,
+    )
     active = _load_active_watches(config)
     by_provider: dict[str, list[Watch]] = {}
     for w in active:
@@ -197,189 +211,116 @@ def run_watches(
         if provider is None:
             log.error("unknown provider: %s", provider_name)
             continue
-        user, password = creds.get(provider_name, ("", ""))
-        try:
-            provider.login(user, password)
-        except Exception as e:
-            # A failed login used to be logged and skipped, which is the
-            # quietest way this system can die: the run still succeeds, the
-            # state timestamp still advances, so the heartbeat and the health
-            # card both stay green while nothing is being watched.
-            log.exception("[%s] login failed: %s", provider_name, e)
-            if state_mod.record_login_failure(state, provider_name, now_iso):
-                try:
-                    notifier.notify_login_failed(provider_name, str(e), push=login_push)
-                except Exception as nfx:
-                    log.exception("login-failure notify itself failed: %s", nfx)
-            continue
-        if state_mod.clear_login_failure(state, provider_name):
-            log.info("[%s] login recovered", provider_name)
-            try:
-                notifier.notify_login_recovered(provider_name, push=login_push)
-            except Exception as nfx:
-                log.exception("login-recovery notify itself failed: %s", nfx)
-        # Settle holds placed on earlier runs before hunting again: a hold that
-        # lapsed unpaid re-arms auto-reserve here, so this poll can re-reserve.
-        _resolve_pending_reservations(
-            provider, watches, state, now_iso,
-            notify_rearmed_fn=notify_auto_reserve_rearmed_fn,
+        new_train_total += _poll_provider(
+            provider_name, provider, watches, state, now_iso,
+            creds.get(provider_name, ("", "")), opts, hooks,
         )
-        any_watch_ok = False
-        last_watch_err: Exception | None = None
-        for watch in watches:
-            try:
-                new_train_total += _process_watch(
-                    watch, provider, state, notify_fn, now_iso,
-                    notify_reserve_success_fn=notify_reserve_success_fn,
-                    notify_reserve_failure_fn=notify_reserve_failure_fn,
-                    schedule_reminders_fn=schedule_reminders_fn,
-                    notify_auto_reserve_disabled_fn=notify_auto_reserve_disabled_fn,
-                    allow_waiting=allow_waiting_list,
-                    silent=silent_now,
-                    renotify=renotify,
-                )
-                any_watch_ok = True
-            except Exception as e:
-                last_watch_err = e
-                log.exception("[%s] watch %s failed: %s", provider_name, _wid(watch.id), e)
-        # Login failure has an alert; a provider whose every SEARCH fails died
-        # just as completely and just as quietly — the run stays green, state
-        # advances, the health card smiles. That is how the 코레일+ MACRO
-        # rejection went unnoticed until a seat was already missed. Alert on
-        # the systemic case (all watches failed); a single failing watch among
-        # working ones is a per-watch problem, not a dead provider.
-        if watches and not any_watch_ok:
-            if state_mod.record_search_failure(state, provider_name, now_iso):
-                try:
-                    notifier.notify_search_failed(
-                        provider_name, str(last_watch_err), push=login_push)
-                except Exception as nfx:
-                    log.exception("search-failure notify itself failed: %s", nfx)
-        elif any_watch_ok and state_mod.clear_search_failure(state, provider_name):
-            log.info("[%s] search recovered", provider_name)
-            try:
-                notifier.notify_search_recovered(provider_name, push=login_push)
-            except Exception as nfx:
-                log.exception("search-recovery notify itself failed: %s", nfx)
 
     # Record this *actual* poll (skip runs returned earlier, so they're never
     # counted). PWA stats read poll_history instead of GHA run counts.
     state_mod.record_poll(state, now_iso, new_train_total)
+    if opts.summarize_empty and new_train_total == 0:
+        _send_summary(hooks.summary, active, opts.silent)
 
-    settings = config.get("settings") or {}
-    notify_empty_on_cron = bool(settings.get("notify_empty_on_cron", False))
-    is_manual = event_name == "workflow_dispatch"
-    is_automated = event_name in ("schedule", "repository_dispatch", "push")
-    should_summarize = is_manual or (notify_empty_on_cron and is_automated)
-    if should_summarize and new_train_total == 0 and notify_summary_fn is not None:
+
+def _poll_provider(
+    provider_name: str, provider: Provider, watches: list[Watch],
+    state: dict[str, Any], now_iso: str, cred: tuple[str, str],
+    opts: _RunOptions, hooks: _Hooks,
+) -> int:
+    """Log in, settle earlier holds, then check each watch. Returns the
+    number of newly found trains."""
+    if not _login(provider_name, provider, cred, state, now_iso, opts.login_push):
+        return 0
+    # Settle holds placed on earlier runs before hunting again: a hold that
+    # lapsed unpaid re-arms auto-reserve here, so this poll can re-reserve.
+    reservations.resolve_pending_reservations(
+        provider, watches, state, now_iso,
+        notify_rearmed_fn=hooks.auto_reserve_rearmed,
+    )
+    found = 0
+    any_watch_ok = False
+    last_watch_err: Exception | None = None
+    for watch in watches:
         try:
-            notify_summary_fn(active, silent=silent_now)
-        except TypeError:
-            # Older test fakes don't accept silent kwarg
-            notify_summary_fn(active)
+            found += _process_watch(watch, provider, state, now_iso, opts, hooks)
+            any_watch_ok = True
         except Exception as e:
-            log.exception("summary notify failed: %s", e)
+            last_watch_err = e
+            log.exception("[%s] watch %s failed: %s", provider_name, _wid(watch.id), e)
+    _track_search_outage(
+        provider_name, state, now_iso, bool(watches), any_watch_ok,
+        last_watch_err, opts.login_push,
+    )
+    return found
 
 
-def _resolve_pending_reservations(
-    provider: Provider,
-    watches: list[Watch],
-    state: dict[str, Any],
-    now_iso: str,
-    *,
-    notify_rearmed_fn: Callable[[Watch], None] | None = None,
-) -> None:
-    """Decide the fate of holds this provider placed on earlier runs.
-
-    A reservation is only a *hold* until it's paid (~20 min). Previously any
-    successful reserve disabled auto-reserve permanently, so a hold that
-    expired overnight left the watch dead — no further attempts, seat gone.
-
-    Now: paid → keep auto-reserve off (goal achieved, hold cleared).
-         expired unpaid → re-arm auto-reserve so we keep hunting.
-         still within deadline → leave as-is.
-    """
-    pending = [w for w in watches if state_mod.get_pending_reservation(state, w.id)]
-    if not pending:
-        return
-    now_dt = _parse_dt(now_iso)
-    paid: set[str] | None
+def _login(
+    provider_name: str, provider: Provider, cred: tuple[str, str],
+    state: dict[str, Any], now_iso: str, push: bool,
+) -> bool:
     try:
-        paid = provider.paid_reservation_keys()
-    except Exception as e:  # never let this break the poll
-        log.exception("[%s] paid-reservation lookup failed: %s", provider.name, e)
-        paid = None
+        provider.login(*cred)
+    except Exception as e:
+        # A failed login used to be logged and skipped, which is the
+        # quietest way this system can die: the run still succeeds, the
+        # state timestamp still advances, so the heartbeat and the health
+        # card both stay green while nothing is being watched.
+        log.exception("[%s] login failed: %s", provider_name, e)
+        if state_mod.record_login_failure(state, provider_name, now_iso):
+            _safe_notify("login-failure", notifier.notify_login_failed,
+                         provider_name, str(e), push=push)
+        return False
+    if state_mod.clear_login_failure(state, provider_name):
+        log.info("[%s] login recovered", provider_name)
+        _safe_notify("login-recovery", notifier.notify_login_recovered,
+                     provider_name, push=push)
+    return True
 
-    if paid is None:
-        # Cannot tell paid from lapsed. Re-arming on a guess buys the user a
-        # second ticket for a seat they already own and paid for; leaving the
-        # hold alone costs at most one missed re-hunt, which the PWA shows as
-        # a paused watch and the user can re-arm themselves. Fail towards not
-        # spending money.
-        log.warning("[%s] 결제 여부를 확인할 수 없어 %d건의 예약 판정을 보류합니다",
-                    provider.name, len(pending))
+
+def _track_search_outage(
+    provider_name: str, state: dict[str, Any], now_iso: str, had_watches: bool,
+    any_watch_ok: bool, last_err: Exception | None, push: bool,
+) -> None:
+    # Login failure has an alert; a provider whose every SEARCH fails died
+    # just as completely and just as quietly — the run stays green, state
+    # advances, the health card smiles. That is how the 코레일+ MACRO
+    # rejection went unnoticed until a seat was already missed. Alert on
+    # the systemic case (all watches failed); a single failing watch among
+    # working ones is a per-watch problem, not a dead provider.
+    if had_watches and not any_watch_ok:
+        if state_mod.record_search_failure(state, provider_name, now_iso):
+            _safe_notify("search-failure", notifier.notify_search_failed,
+                         provider_name, str(last_err), push=push)
+    elif any_watch_ok and state_mod.clear_search_failure(state, provider_name):
+        log.info("[%s] search recovered", provider_name)
+        _safe_notify("search-recovery", notifier.notify_search_recovered,
+                     provider_name, push=push)
+
+
+def _safe_notify(what: str, fn: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+    """An outage alert that fails must not take down the poll it reports on."""
+    try:
+        fn(*args, **kwargs)
+    except Exception as nfx:
+        log.exception("%s notify itself failed: %s", what, nfx)
+
+
+def _send_summary(summary_fn: SummaryFn | None, active: list[Watch], silent: bool) -> None:
+    if summary_fn is None:
         return
-
-    for watch in pending:
-        rec = state_mod.get_pending_reservation(state, watch.id) or {}
-        rsv_id = str(rec.get("id") or "")
-        journey = str(rec.get("journey") or "")
-        if (rsv_id and rsv_id in paid) or (journey and journey in paid):
-            log.info("[%s] watch %s: reservation %s paid — auto-reserve stays off",
-                     provider.name, _wid(watch.id), rsv_id)
-            state_mod.clear_pending_reservation(state, watch.id)
-            # Backstop to the "결제 완료 — 알림 중지" link in the message: if the
-            # user paid without tapping it, silence whatever reminders are still
-            # queued. The link is the fast path; this only catches stragglers on
-            # the next poll, so it must never take down a run that already did
-            # its job.
-            try:
-                notifier.cancel_reminders(rsv_id)
-            except Exception as e:
-                log.exception("리마인더 취소 실패: %s", e)
-            continue
-        deadline = _parse_dt(rec.get("deadline"))
-        if deadline is None or now_dt is None:
-            continue  # standby / unknown deadline — leave the hold alone
-        if now_dt <= deadline + timedelta(minutes=RE_ARM_GRACE_MIN):
-            continue  # still payable
-        if not journey:
-            # Written before holds recorded a journey key, so the paid check
-            # above could not have matched it on Korail whatever the truth is.
-            # Same rule as an unavailable lookup: no evidence, no re-arm. Drop
-            # the record once it is long dead so state does not accumulate —
-            # auto-reserve stays off and the PWA shows the watch as paused.
-            if now_dt > deadline + timedelta(hours=STALE_HOLD_HOURS):
-                log.info("[%s] watch %s: dropping unverifiable legacy hold %s",
-                         provider.name, _wid(watch.id), rsv_id or "?")
-                state_mod.clear_pending_reservation(state, watch.id)
-            continue
-        # Hold lapsed unpaid → the seat is back in the pool; hunt again.
-        log.info("[%s] watch %s: hold %s expired unpaid — re-arming auto-reserve",
-                 provider.name, _wid(watch.id), rsv_id or "?")
-        state_mod.clear_pending_reservation(state, watch.id)
-        state_mod.enable_auto_reserve(state, watch.id)
-        if notify_rearmed_fn is not None:
-            try:
-                notify_rearmed_fn(watch)
-            except Exception as e:
-                log.exception("re-arm notify failed: %s", e)
+    try:
+        summary_fn(active, silent=silent)
+    except TypeError:
+        # Older test fakes don't accept silent kwarg
+        summary_fn(active)
+    except Exception as e:
+        log.exception("summary notify failed: %s", e)
 
 
 def _process_watch(
-    watch: Watch,
-    provider: Provider,
-    state: dict[str, Any],
-    notify_fn: NotifyFn,
-    now_iso: str,
-    *,
-    notify_reserve_success_fn: ReserveSuccessFn | None = None,
-    notify_reserve_failure_fn: ReserveFailureFn | None = None,
-    schedule_reminders_fn: ScheduleRemindersFn | None = None,
-    notify_auto_reserve_disabled_fn: Callable[[Watch], None] | None = None,
-    allow_waiting: bool = False,
-    silent: bool = False,
-    renotify: bool = False,
+    watch: Watch, provider: Provider, state: dict[str, Any], now_iso: str,
+    opts: _RunOptions, hooks: _Hooks,
 ) -> int:
     state_mod.mark_check(state, watch.id, now_iso)
     state_mod.set_watch_date(state, watch.id, watch.date)
@@ -389,104 +330,27 @@ def _process_watch(
     # renotify: alert on every poll while seats remain (dedup skipped). We
     # still record notified_train_ids so turning the toggle back off resumes
     # normal dedup cleanly.
-    new_trains = find_new_trains(watch, trains, notified, renotify=renotify)
-
+    new_trains = find_new_trains(watch, trains, notified, renotify=opts.renotify)
     if not new_trains:
         log.info("[%s] watch %s: no new seats (%d searched)", provider.name, _wid(watch.id), len(trains))
         return 0
 
     log.info("[%s] watch %s: %d seat(s)%s", provider.name, _wid(watch.id), len(new_trains),
-             " (renotify)" if renotify else " new")
+             " (renotify)" if opts.renotify else " new")
     try:
-        notify_fn(watch, new_trains, silent=silent)
+        hooks.notify(watch, new_trains, silent=opts.silent)
     except TypeError:
-        notify_fn(watch, new_trains)
+        hooks.notify(watch, new_trains)
     state_mod.add_notified_ids(state, watch.id, [t.raw_id for t in new_trains])
 
-    # Auto-reserve is one-shot: after a successful reservation the watch's
-    # auto_reserve is self-disabled (recorded in state, since the worker can't
-    # edit the watch). This prevents re-reserving the same seat on every
-    # renotify poll, and lets the user re-enable from the PWA when they want
-    # another. A prior success in state short-circuits here.
-    if watch.auto_reserve and not state_mod.is_auto_reserve_disabled(state, watch.id):
-        # Try up to MAX_RESERVE_CANDIDATES trains in case earlier candidates
-        # got snatched between our search and the reserve call (anti-bot
-        # macros / faster bots / human race wins). Stop on first success.
-        candidates = new_trains[:MAX_RESERVE_CANDIDATES]
-        reservation: Reservation | None = None
-        chosen: Train | None = None
-        last_err: tuple[Train, Exception] | None = None
-        for candidate in candidates:
-            try:
-                r = provider.reserve(
-                    candidate, watch.passengers, allow_waiting=allow_waiting,
-                )
-                reservation = r
-                chosen = candidate
-                break
-            except Exception as e:
-                last_err = (candidate, e)
-                log.info(
-                    "[%s] watch %s: reserve %s failed (%s); trying next candidate",
-                    provider.name, _wid(watch.id), candidate.train_no, e,
-                )
-
-        if reservation is not None and chosen is not None:
-            if reservation.already_existed:
-                # The provider itself said the user already holds this — the
-                # strongest evidence there is. Stop hunting: leaving
-                # auto-reserve armed meant every later poll fired another
-                # reserve call that could only be rejected the same way, which
-                # is both pointless and exactly the pattern bot detection looks
-                # for. No pending record: we never learned this hold's
-                # deadline, and guessing one is what re-books seats.
-                log.info(
-                    "[%s] watch %s: train %s already reserved — pausing auto-reserve",
-                    provider.name, _wid(watch.id), chosen.train_no,
-                )
-                state_mod.disable_auto_reserve(state, watch.id)
-            else:
-                kind = "standby" if reservation.is_standby else "reserved"
-                log.info(
-                    "[%s] watch %s: %s %s (id=%s)",
-                    provider.name, _wid(watch.id), kind, chosen.train_no, reservation.reservation_id,
-                )
-                if notify_reserve_success_fn is not None:
-                    notify_reserve_success_fn(watch, chosen, reservation)
-                if schedule_reminders_fn is not None and not reservation.is_standby:
-                    # Standby has no payment deadline yet — reminders kick in
-                    # only after assignment via a separate notification.
-                    try:
-                        schedule_reminders_fn(watch, chosen, reservation)
-                    except Exception as e:
-                        log.exception("schedule_reminders failed for %s: %s", reservation.reservation_id, e)
-                # Pause auto-reserve while this hold is alive so we don't
-                # re-reserve on every later poll. It is *not* permanent: a
-                # later run checks whether the hold got paid — if it expired
-                # unpaid, auto-reserve re-arms automatically (see
-                # _resolve_pending_reservations).
-                state_mod.disable_auto_reserve(state, watch.id)
-                state_mod.set_pending_reservation(
-                    state, watch.id, reservation.reservation_id, reservation.expires_at,
-                    journey=journey_key(chosen.train_no, chosen.date),
-                )
-                if notify_auto_reserve_disabled_fn is not None:
-                    try:
-                        notify_auto_reserve_disabled_fn(watch)
-                    except Exception as e:
-                        log.exception("auto-reserve-disabled notify failed: %s", e)
-        elif last_err is not None:
-            target, err = last_err
-            log.exception(
-                "[%s] watch %s: all %d reserve candidates failed; last error on %s: %s",
-                provider.name, _wid(watch.id), len(candidates), target.train_no, err,
-            )
-            if notify_reserve_failure_fn is not None:
-                try:
-                    notify_reserve_failure_fn(watch, target, str(err))
-                except Exception as nfx:
-                    log.exception("reserve-failure notify itself failed: %s", nfx)
-
+    reservations.try_auto_reserve(
+        watch, provider, state, new_trains,
+        notify_reserve_success_fn=hooks.reserve_success,
+        notify_reserve_failure_fn=hooks.reserve_failure,
+        schedule_reminders_fn=hooks.schedule_reminders,
+        notify_auto_reserve_disabled_fn=hooks.auto_reserve_disabled,
+        allow_waiting=opts.allow_waiting,
+    )
     return len(new_trains)
 
 
@@ -511,6 +375,34 @@ def send_test_notification(channel: str = "all") -> int:
     Nothing is searched and nothing is reserved.
     """
     pushover.set_mode(remote.fetch_mode())
+    watch, train = _synthetic_find()
+    body = "🧪 테스트 알림 (실제 좌석 아님)\n\n" + notifier.format_message(watch, [train])
+
+    if channel in ("telegram", "all"):
+        notifier.send_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], body,
+        )
+        log.info("텔레그램 테스트 알림 발송 완료")
+
+    if channel in ("pushover", "all"):
+        if not pushover.enabled():
+            log.error(
+                "PUSHOVER_TOKEN / PUSHOVER_USER 가 설정되지 않아 발송하지 않았습니다"
+            )
+            return 1
+        pushover.send(
+            "🧪 테스트 — 좌석 발견 알림",
+            body,
+            priority=pushover.PRIORITY_EMERGENCY,
+            expire_sec=pushover.TEST_EXPIRE_SEC,
+        )
+        log.info("pushover 테스트 알림 발송 완료 (mode=%s)", pushover._mode)
+
+    return 0
+
+
+def _synthetic_find() -> tuple[Watch, Train]:
+    """A made-up 서울→부산 seat for today, for the test alert only."""
     watch = Watch(
         id="test-notification",
         provider="korail",
@@ -536,29 +428,7 @@ def send_test_notification(channel: str = "all") -> int:
         booking_url="https://www.letskorail.com",
         seat_class="general",
     )
-    body = "🧪 테스트 알림 (실제 좌석 아님)\n\n" + notifier.format_message(watch, [train])
-
-    if channel in ("telegram", "all"):
-        notifier.send_telegram(
-            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], body,
-        )
-        log.info("텔레그램 테스트 알림 발송 완료")
-
-    if channel in ("pushover", "all"):
-        if not pushover.enabled():
-            log.error(
-                "PUSHOVER_TOKEN / PUSHOVER_USER 가 설정되지 않아 발송하지 않았습니다"
-            )
-            return 1
-        pushover.send(
-            "🧪 테스트 — 좌석 발견 알림",
-            body,
-            priority=pushover.PRIORITY_EMERGENCY,
-            expire_sec=pushover.TEST_EXPIRE_SEC,
-        )
-        log.info("pushover 테스트 알림 발송 완료 (mode=%s)", pushover._mode)
-
-    return 0
+    return watch, train
 
 
 def load_credentials() -> dict[str, tuple[str, str]]:

@@ -92,6 +92,12 @@ config의 watch 항목과 adapter `search()` 결과를 매칭. 신규 발견 좌
 ```
 SRT는 코레일톡/SRT 앱 딥링크 또는 웹 URL.
 
+### `worker/reservations.py` / `worker/reminders.py`
+- `reservations`: 자동 임시예약(`try_auto_reserve`)과 지난 예약 정산
+  (`resolve_pending_reservations` — 결제됨/만료/보류 판정, 만료 시 자동예약 재무장)
+- `reminders`: CF Worker에 결제 마감 리마인더 등록·취소, 결제 완료 링크 서명
+- 로그에 워치 ID 대신 `logsafe.wid()` 핸들만 남긴다 (공개 저장소 Actions 로그)
+
 ### `worker/main.py`
 1. CF KV에서 config 로드 → active watch만 필터
 2. provider별로 그룹화, 각 adapter 로그인
