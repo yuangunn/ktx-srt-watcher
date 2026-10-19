@@ -9,7 +9,7 @@
 # tests.yml runs against it first. CI cannot reach the live backend (it
 # refuses datacenter IPs), so after merging a bump watch for a 감시 중단
 # alert, or dispatch api-probe on korail-home.
-pykorail==0.2.2
+pykorail==0.3.1
 curl-cffi==0.16.3
 requests>=2.31.0
 pydantic>=2.5.0
