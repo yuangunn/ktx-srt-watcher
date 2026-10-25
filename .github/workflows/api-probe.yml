@@ -30,7 +30,7 @@ jobs:
     runs-on: ${{ inputs.runner == 'korail-home' && fromJSON('["self-hosted","korail-home"]') || inputs.runner }}
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Inspect / install / probe
         env:
           PROBE: ${{ inputs.run_probe && '1' || '0' }}
