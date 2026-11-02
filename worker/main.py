@@ -85,8 +85,12 @@ def main() -> int:
 def _providers(state: dict[str, Any]) -> dict[str, Provider]:
     # One device identity across runs: a fresh random profile on every poll is
     # what looks like a bot farm. Minted once, kept in state.
-    korail = KorailProvider(device_profile_id=state.get("korail_device_profile"))
+    korail = KorailProvider(
+        device_profile_id=state.get("korail_device_profile"),
+        android_id=state.get("korail_android_id"),
+    )
     state["korail_device_profile"] = korail.device_profile_id
+    state["korail_android_id"] = korail.android_id
     return {"korail": korail}
 
 

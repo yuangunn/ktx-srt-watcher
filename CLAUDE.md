@@ -53,12 +53,15 @@ GitHub 호스팅. 설치·보안 수칙: `docs/SELF_HOSTED_RUNNER.md` — 특히
 ### `worker/adapters/korail.py` — 유일한 어댑터
 - 2026-09-01 코레일-SR 통합 이후 전 고속열차(구 SRT = KTX-산천 포함)가 코레일
   백엔드에서 팔린다. SRT 앱·API는 2026-08-31 종료
-- `pykorail` 사용 (MIT). 코레일+ 백엔드는 **TLS 지문**으로 구형 클라이언트를
+- `pykorail` 사용. 코레일+ 백엔드는 **TLS 지문**으로 구형 클라이언트를
   거르기 때문에(korail2는 MACRO ERROR로 전멸) curl-cffi 위장을 쓰는 이 라이브러리가
-  필요하다. 2026-11-02 PyPI에서 프로젝트가 삭제되어 `vendor/`의 0.2.2 휠(sha256 검증)을
-  경로로 설치한다 — 출처·교체 절차는 `vendor/README.md`
+  필요하다. 2026-11-02 PyPI에서 프로젝트가 삭제되어 `vendor/`의 0.6.1 휠(sha256 검증)을
+  경로로 설치한다. 0.2.2는 10/21 코레일 앱 개편 뒤 조회가 -8204로 막힘. 0.3.0 이후
+  배포본은 라이선스가 MIT + **상업적 이득 금지** — 출처·라이선스·교체 절차는 `vendor/README.md`
+- **기기 고정은 프로파일 id + `android_id` 둘 다**: 0.6부터 android_id가 봇 차단 토큰에
+  들어가므로 state(`korail_android_id`)에 함께 저장해 재사용
 - **기기 프로파일 고정**: 매 실행 다른 기기로 보이면 봇처럼 보인다. 프로파일 id를
-  state(`korail_device_profile`)에 저장해 재사용
+  state(`korail_device_profile`)에 저장해 재사용 (위 `android_id`와 함께)
 - `search()`는 `time_min~time_max` 범위, `train_types` 일치, **잔여석 1석 이상**인 열차만 반환
 - 로그인 세션은 함수 호출 단위. Actions 매 실행마다 새로 로그인
 - **구 SRT 워치**: `provider: "srt"` 워치는 CF Worker의 `GET /config`가 KV에서

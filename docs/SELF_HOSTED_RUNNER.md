@@ -19,7 +19,7 @@ CI(pytest)·Cloudflare 배포는 계속 GitHub 호스팅 러너에서 돕니다.
 | 설치 난이도 | 쉬움 (systemd 서비스) | PATH 함정 하나 있음 (아래) | WSL2 설치 + 유지 작업 ([아래](#윈도우-pc-wsl2)) |
 | 요구 사항 | **64-bit OS 필수** (Pi 3 이상 + Raspberry Pi OS 64-bit) | Apple Silicon/Intel 무관 | Windows 10/11, WSL2 |
 
-공통 요구: Python **3.10+** (`python3 --version`), git, 집 인터넷.
+공통 요구: Python **3.11+** (`python3 --version`), git, 집 인터넷.
 Pi OS bookworm은 3.11이라 그대로 됩니다. macOS는 아래 참고.
 
 ---
@@ -90,7 +90,7 @@ sudo ./svc.sh status   # active (running) 확인
 
 ### macOS만: PATH 함정 (중요)
 
-macOS 기본 `/usr/bin/python3`(Xcode CLT)는 3.9라서 pykorail(3.10+)이 설치되지
+macOS 기본 `/usr/bin/python3`(Xcode CLT)는 3.9라서 pykorail(3.11+)이 설치되지
 않습니다. Homebrew 파이썬을 쓰되, **서비스로 뜬 러너는 Homebrew PATH를
 모릅니다.** 러너 폴더의 `.env` 파일로 주입하세요:
 
@@ -129,7 +129,7 @@ echo "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> .e
 | 증상 | 원인/조치 |
 |---|---|
 | 잡이 계속 Queued | 러너 오프라인이거나 **라벨 불일치** — Runners 페이지에서 라벨에 `korail-home` 있는지 확인 |
-| `pip install` 실패: requires Python >=3.10 | macOS PATH 함정 — 위 `.env` 조치 |
+| `pip install` 실패: requires Python >=3.11 | macOS PATH 함정 — 위 `.env` 조치 |
 | `pip install` 실패: `No matching distribution found for …` (from versions: none) | 러너 문제가 아니라 PyPI에서 패키지가 사라진 것. 집 PC에서 할 일 없음 — 저장소에서 휠을 `vendor/`로 옮긴다 ([vendor/README.md](../vendor/README.md)) |
 | `python3 -m venv` 오류 (Linux) | `sudo apt install -y python3-venv` |
 | config.sh가 의존성 오류 (Pi) | `sudo ./bin/installdependencies.sh` |

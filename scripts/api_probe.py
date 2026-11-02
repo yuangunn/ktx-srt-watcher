@@ -20,6 +20,9 @@ subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", "requir
                check=True, cwd=ROOT)
 
 from pykorail import Korail, LoginFailedError, NoResultsError  # noqa: E402
+from pykorail import __version__ as PYKORAIL_VERSION  # noqa: E402
+
+print(f"python {sys.version.split()[0]} | pykorail {PYKORAIL_VERSION}")
 
 UID, PW = os.environ.get("KORAIL_ID", ""), os.environ.get("KORAIL_PW", "")
 if os.environ.get("PROBE") != "1" or not UID or not PW:
