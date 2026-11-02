@@ -4,7 +4,8 @@ Since the merger every high-speed train — including what used to be SRT,
 now branded KTX-산천 — sells through KORAIL's backend, and the SRT app and
 API were shut down on 2026-08-31. One account, one search, one adapter.
 
-Built on pykorail (MIT, PyPI), which speaks the 코레일+ protocol: the old
+Built on pykorail (vendored wheel, see vendor/README.md), which speaks the
+코레일+ protocol: the old
 korail2 requests were refused wholesale after the merger with "앱을 최신
 버전으로 업데이트..." (MACRO ERROR), and presenting a current app version
 did not help — the backend fingerprints the TLS handshake itself, which is
@@ -27,7 +28,7 @@ from pykorail import (
     SeniorPassenger,
     SoldOutError,
 )
-from pykorail.device import profile_by_id, random_profile
+from pykorail.device import DeviceProfile, profile_by_id, random_profile
 
 from ..models import Passengers, Reservation, Train, Watch
 from .base import journey_key
@@ -41,15 +42,19 @@ RESERVATION_HOLD_MIN = 20
 class KorailProvider:
     name = "korail"
 
-    def __init__(self, device_profile_id: str | None = None) -> None:
+    def __init__(
+        self, device_profile_id: str | None = None, android_id: str | None = None,
+    ) -> None:
         self._client: Korail | None = None
         # pykorail's own guidance: presenting a different device on every run
         # is what looks unnatural. We poll 20+ times a day from fresh
-        # processes, so the profile is minted once, persisted in state by
-        # main(), and re-presented on every later run.
-        profile = profile_by_id(device_profile_id) if device_profile_id else None
-        self._profile = profile or random_profile()
+        # processes, so the device is minted once, persisted in state by
+        # main(), and re-presented on every later run. Since pykorail 0.6 the
+        # android_id rides inside the anti-bot token, so it is half of that
+        # identity: a profile restored without it gets a fresh random one.
+        self._profile = _restore_profile(device_profile_id, android_id)
         self.device_profile_id: str = self._profile.id
+        self.android_id: str = self._profile.android_id
 
     def login(self, user_id: str, password: str) -> None:
         self._client = Korail(device_profile=self._profile)
@@ -157,7 +162,7 @@ class KorailProvider:
 
         return Reservation(
             provider="korail",
-            reservation_id=str(rsv.rsv_id),
+            reservation_id=str(rsv.pnr_no),
             train_no=train.train_no,
             expires_at=None if rsv.is_waiting else _deadline_iso(rsv),
             booking_url=LETSKORAIL_BOOKING,
@@ -188,6 +193,19 @@ class KorailProvider:
             log.warning("코레일 발권 내역 조회 실패 — 결제 여부 판단 불가: %s", e)
             return None
         return keys
+
+
+def _restore_profile(profile_id: str | None, android_id: str | None) -> DeviceProfile:
+    """The saved device, or a new one when nothing usable was saved."""
+    if profile_id:
+        try:
+            profile = profile_by_id(profile_id, android_id=android_id)
+        except ValueError:
+            # A malformed saved android_id: keep the model, mint the id anew.
+            profile = profile_by_id(profile_id)
+        if profile is not None:
+            return profile
+    return random_profile()
 
 
 def _deadline_iso(rsv) -> str:

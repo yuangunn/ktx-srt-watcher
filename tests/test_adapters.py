@@ -40,6 +40,30 @@ class TestDeviceProfilePinning:
         provider = korail.KorailProvider(device_profile_id="no-such-profile")
         assert provider.device_profile_id
 
+    def test_saved_android_id_is_reused(self):
+        # Since pykorail 0.6 the android_id is embedded in the anti-bot token;
+        # a fresh one per run is a fresh device per run.
+        first = korail.KorailProvider()
+        again = korail.KorailProvider(
+            device_profile_id=first.device_profile_id, android_id=first.android_id,
+        )
+        assert again.android_id == first.android_id
+
+    def test_profile_saved_before_android_id_gets_one_minted(self):
+        # State written by the 0.2.2 adapter has only the profile id.
+        first = korail.KorailProvider()
+        upgraded = korail.KorailProvider(device_profile_id=first.device_profile_id)
+        assert upgraded.device_profile_id == first.device_profile_id
+        assert len(upgraded.android_id) == 16
+
+    def test_malformed_android_id_keeps_the_model(self):
+        first = korail.KorailProvider()
+        provider = korail.KorailProvider(
+            device_profile_id=first.device_profile_id, android_id="not-hex",
+        )
+        assert provider.device_profile_id == first.device_profile_id
+        assert provider.android_id != "not-hex"
+
 
 class TestKorailHelpers:
     def test_format_time_pads_six_digit(self):

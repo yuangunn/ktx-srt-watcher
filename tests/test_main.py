@@ -1260,3 +1260,17 @@ class TestWatchIdIsNeverLogged:
         assert "watch wpvm" in logged          # the line was emitted at all
         for secret in ("부산", "동탄", "20260817"):
             assert secret not in logged
+
+
+class TestDeviceIdentityPersistence:
+    def test_profile_and_android_id_round_trip_through_state(self):
+        # One device across runs: both halves of the identity are written to
+        # state on the first run and presented again on the next.
+        s: dict[str, Any] = {}
+        first = main._providers(s)["korail"]
+        assert s["korail_device_profile"] == first.device_profile_id
+        assert s["korail_android_id"] == first.android_id
+        again = main._providers(s)["korail"]
+        assert (again.device_profile_id, again.android_id) == (
+            first.device_profile_id, first.android_id,
+        )

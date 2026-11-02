@@ -62,7 +62,7 @@ jobs:
 
       # System python + a local venv instead of actions/setup-python: on a
       # self-hosted ARM device (Raspberry Pi) setup-python has no prebuilt
-      # interpreters to download, and the device's python3 (>=3.10 for
+      # interpreters to download, and the device's python3 (>=3.11 for
       # pykorail) is exactly what we want anyway. The venv persists in the
       # runner's work dir, so installs after the first are no-ops.
       - name: Install deps

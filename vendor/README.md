@@ -1,36 +1,61 @@
 # vendor/
 
-## pykorail-0.2.2-py3-none-any.whl
+## pykorail-0.6.1-py3-none-any.whl
 
 The 코레일+ client the watcher is built on (`worker/adapters/korail.py`).
-MIT licensed; the license text ships inside the wheel
-(`pykorail-0.2.2.dist-info/licenses/LICENSE`).
+Requires Python 3.11+.
 
 **Why it lives here.** The `pykorail` project was deleted from PyPI on
-2026-11-02 around 19:05 KST (`https://pypi.org/simple/pykorail/` → 404). The
-home runner reinstalls dependencies on every poll, so from that tick on every
-run failed at `pip install` with `No matching distribution found for
-pykorail==0.2.2`. `requirements.txt` now installs this file by path, so the
+2026-11-02 around 19:05 KST (`https://pypi.org/simple/pykorail/` → 404), and
+the upstream repository (`devgyurak/pykorail`) went with it. No reason was
+published, and no malware report exists for it (OSV). The home runner
+reinstalls dependencies on every poll, so from that tick on every run failed
+at `pip install`. `requirements.txt` now installs this file by path: the
 install no longer depends on PyPI, and a stranger re-registering the freed
 name on PyPI cannot get a build installed here.
 
-**Provenance.** This is the exact file PyPI served, recovered from two
-independent PyPI mirrors that had not yet dropped it:
+**Why 0.6.1 and not the 0.2.2 we ran before.** KORAIL tightened the app's
+anti-bot checks on 2026-10-21 (app 7.0.10). Since then 0.2.2 logs in but every
+search is refused with `-8204` ("최신 버전으로 업데이트해 주세요"). Verified
+on `korail-home` with `api-probe` on 2026-11-02: 0.2.2 → both probe searches
+`-8204`; 0.6.1 → login OK, 서울→부산 and 수서→부산 both return trains. 0.6.0
+(2026-10-28) rebuilt the DynaPath token for app 7.0.10; 0.6.1 was published
+2026-11-02 03:44 UTC, hours before the project was deleted.
+
+**Device identity.** Since 0.6 the `android_id` is embedded in the anti-bot
+token. `pykorail.device.profile_by_id(id)` mints a random one unless the saved
+one is passed back, so the adapter persists both `korail_device_profile` and
+`korail_android_id` in state. Without that, every poll would look like a new
+phone.
+
+**License — not plain MIT any more.** Releases after 0.3.0 ship the
+"pykorail License": MIT terms plus a *Commercial Gain Restriction*. No reselling
+tickets above face value, no fees/subscriptions/ad revenue for booking
+services built on it, no selling the software. Expressly allowed: booking for
+your own travel, booking for others at face value without a fee, and
+non-commercial personal projects. That covers this watcher; it does not cover
+running it as a paid service for others. The full text is in the wheel at
+`pykorail-0.6.1.dist-info/licenses/LICENSE` and must travel with any copy.
+
+**Provenance.** This is the exact file PyPI served, recovered from PyPI
+mirrors that had not yet dropped it:
 
 | | |
 |---|---|
-| sha256 | `be639a15b65006dd805ae16905db776b40404ebb2062e8387b7a03cb79111d4c` |
-| blake2b-256 | `2141e34f069501b4f4402ad40b92a2f688ab9929590d259be6812beb4bb5a58c` |
-| Sources | `mirror.kakao.com/pypi`, `mirrors.aliyun.com/pypi` (byte-identical) |
+| sha256 | `5d1055a41d19061682b541dbc07fe11b764c9cad28321e8e5014c249769c61b8` |
+| blake2b-256 | `56b53bc07459a866861584a2e3e22ce12f81bd3a2a438edfd99d1f9c2fe0007b` |
+| Index sha256 agrees | `mirrors.aliyun.com`, `mirrors.cloud.tencent.com`, `pypi.doubanio.com` |
+| Downloaded from | Aliyun and Tencent (byte-identical) |
 
-Both mirrors' simple index lists the sha256 above (copied from PyPI's own
-metadata), and the blake2b matches PyPI's storage path
-`packages/21/41/e34f0695…/pykorail-0.2.2-py3-none-any.whl`.
-Check with `sha256sum vendor/pykorail-0.2.2-py3-none-any.whl`.
+The blake2b matches PyPI's storage path
+`packages/56/b5/3bc07459…/pykorail-0.6.1-py3-none-any.whl`. The wheel was
+scanned before vendoring: it only talks to `smart.letskorail.com` and
+`nf.letskorail.com`, and has no subprocess/eval/exec/env access.
+Check with `sha256sum vendor/pykorail-0.6.1-py3-none-any.whl`.
 
-**Replacing it.** There is no upstream to upgrade from any more, and
-Dependabot cannot see this pin. If 코레일+ changes and 0.2.2 stops working (a
-"감시 중단" alert), a newer build must be found and verified the same way:
-the same sha256 from more than one source. Then swap the file, update the
+**Replacing it.** There is no upstream to upgrade from, and Dependabot cannot
+see this pin. If 코레일+ changes again (a "감시 중단" alert, or `-8204` in an
+`api-probe` run), a newer build must be found and verified the same way: the
+same sha256 from more than one source, then a scan. Swap the file, update the
 path in `requirements.txt` and the hashes above, and dispatch `api-probe` on
-`korail-home` before merging.
+`korail-home` from the branch before merging.
