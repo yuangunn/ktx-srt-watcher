@@ -130,6 +130,7 @@ echo "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> .e
 |---|---|
 | 잡이 계속 Queued | 러너 오프라인이거나 **라벨 불일치** — Runners 페이지에서 라벨에 `korail-home` 있는지 확인 |
 | `pip install` 실패: requires Python >=3.10 | macOS PATH 함정 — 위 `.env` 조치 |
+| `pip install` 실패: `No matching distribution found for …` (from versions: none) | 러너 문제가 아니라 PyPI에서 패키지가 사라진 것. 집 PC에서 할 일 없음 — 저장소에서 휠을 `vendor/`로 옮긴다 ([vendor/README.md](../vendor/README.md)) |
 | `python3 -m venv` 오류 (Linux) | `sudo apt install -y python3-venv` |
 | config.sh가 의존성 오류 (Pi) | `sudo ./bin/installdependencies.sh` |
 | 러너가 재부팅 후 안 뜸 (Linux) | `sudo ./svc.sh install`을 안 했거나 실패 — status 확인 |
