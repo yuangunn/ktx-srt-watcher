@@ -61,3 +61,24 @@ with korail:
         print("reservations:", len(korail.reservations.all()), "| tickets:", len(korail.tickets.all()))
     except Exception as e:
         print(f"reservations/tickets FAILED: {type(e).__name__}: {e}")
+
+# The same search through the watcher's own adapter, so a library bump is
+# checked against our field mapping and filters too, not just pykorail's API.
+# A generic probe watch (never the user's config); counts only.
+sys.path.insert(0, str(ROOT))
+from worker.adapters.korail import KorailProvider  # noqa: E402
+from worker.models import Watch  # noqa: E402
+
+probe_watch = Watch.model_validate({
+    "id": "probe", "provider": "korail", "from": "수서", "to": "부산",
+    "date": tomorrow.strftime("%Y-%m-%d"), "time_min": "06:00", "time_max": "23:59",
+    "train_types": ["KTX", "KTX-산천"],
+})
+try:
+    provider = KorailProvider()
+    provider.login(UID, PW)
+    found = provider.search(probe_watch)
+    print(f"adapter search 수서→부산: {len(found)} trains with seats, "
+          f"types={sorted({t.train_type for t in found})}")
+except Exception as e:
+    print(f"adapter search FAILED: {type(e).__name__}: {e}")
