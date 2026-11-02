@@ -19,6 +19,6 @@
 # alert, or dispatch api-probe on korail-home.
 ./vendor/pykorail-0.6.1-py3-none-any.whl
 curl-cffi==0.16.3
-requests>=2.31.0
+requests>=2.34.2
 pydantic>=2.5.0
 pytest>=8.0.0
