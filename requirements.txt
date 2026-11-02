@@ -1,15 +1,21 @@
 # pykorail speaks the 코레일+ protocol (post 2026-09-01 merger): the backend
 # fingerprints the TLS handshake, so it rides on curl-cffi impersonation —
-# the reason patching the old korail2 could never work. MIT, on PyPI.
+# the reason patching the old korail2 could never work. MIT.
 # SRTrain is gone with the SRT service itself (app and API closed 2026-08-31).
 #
-# Pinned exactly, together with curl-cffi (the TLS impersonation layer it
-# rides on): the home runner installs on every poll, so a floating range let
-# any new release go live untested. Dependabot opens a PR per new version and
+# pykorail is installed from the wheel in vendor/, not from PyPI: the project
+# was deleted from PyPI on 2026-11-02 (~19:05 KST) and every poll failed at
+# `pip install` from then on. A path requirement never consults an index, so
+# a stranger re-registering the freed name cannot slip a build in either.
+# Provenance and how to replace it: vendor/README.md.
+#
+# curl-cffi (the TLS impersonation layer) stays pinned exactly: the home
+# runner installs on every poll, so a floating range would let any new
+# release go live untested. Dependabot opens a PR per new version and
 # tests.yml runs against it first. CI cannot reach the live backend (it
 # refuses datacenter IPs), so after merging a bump watch for a 감시 중단
 # alert, or dispatch api-probe on korail-home.
-pykorail==0.2.2
+./vendor/pykorail-0.2.2-py3-none-any.whl
 curl-cffi==0.16.3
 requests>=2.31.0
 pydantic>=2.5.0

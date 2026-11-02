@@ -11,8 +11,13 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
-subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pykorail"], check=True)
+# Same install as the watcher: pykorail is gone from PyPI, so it comes from
+# the vendored wheel that requirements.txt points at (paths resolve from root).
+ROOT = Path(__file__).resolve().parent.parent
+subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", "requirements.txt"],
+               check=True, cwd=ROOT)
 
 from pykorail import Korail, LoginFailedError, NoResultsError  # noqa: E402
 

@@ -1,6 +1,7 @@
 # Dependency bumps arrive as PRs so tests.yml runs before anything reaches
-# the home runner. pykorail and curl-cffi are pinned in requirements.txt for
-# exactly this reason — see the comment there.
+# the home runner. curl-cffi is pinned in requirements.txt for exactly this
+# reason — see the comment there. pykorail is a vendored wheel (it was deleted
+# from PyPI), so Dependabot has nothing to propose for it: vendor/README.md.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -14,10 +15,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      # The two move together: pykorail's fingerprints are tuned against a
-      # curl-cffi release, so test them as one change.
+      # pykorail's fingerprints are tuned against a curl-cffi release, so a
+      # bump here is the riskiest one: api-probe on korail-home before merging.
       korail-client:
-        patterns: ["pykorail", "curl-cffi", "curl_cffi"]
+        patterns: ["curl-cffi", "curl_cffi"]
 
   - package-ecosystem: github-actions
     directory: /
