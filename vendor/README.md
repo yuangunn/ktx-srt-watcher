@@ -53,9 +53,19 @@ scanned before vendoring: it only talks to `smart.letskorail.com` and
 `nf.letskorail.com`, and has no subprocess/eval/exec/env access.
 Check with `sha256sum vendor/pykorail-0.6.1-py3-none-any.whl`.
 
-**Replacing it.** There is no upstream to upgrade from, and Dependabot cannot
-see this pin. If 코레일+ changes again (a "감시 중단" alert, or `-8204` in an
-`api-probe` run), a newer build must be found and verified the same way: the
-same sha256 from more than one source, then a scan. Swap the file, update the
-path in `requirements.txt` and the hashes above, and dispatch `api-probe` on
-`korail-home` from the branch before merging.
+**Replacing or patching it.** There is no upstream to upgrade from, and
+Dependabot cannot see this pin. If 코레일+ changes again (a "감시 중단" alert,
+or `-8204` in an `api-probe` run), the fix is made here: unpack this wheel,
+patch it, repack it as `0.6.1+ktx.N` with `scripts/pykorail_wheel.py`, and
+dispatch `api-probe` on `korail-home` from the branch before merging.
+Symptom table and step-by-step: [docs/PYKORAIL_MAINTENANCE.md](../docs/PYKORAIL_MAINTENANCE.md).
+A newer build found elsewhere is verified the way this one was: the same
+sha256 from more than one source, then a scan.
+
+**Local patches.** None yet: the wheel above is the upstream file byte for
+byte. Each patched build adds a row here (version, what changed, why, sha256)
+and keeps the upstream sha256 above as the base it was built from.
+
+| Version | Change | Why | sha256 |
+|---|---|---|---|
+| — | — | — | — |

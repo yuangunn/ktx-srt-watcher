@@ -21,8 +21,26 @@ subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", "requir
 
 from pykorail import Korail, LoginFailedError, NoResultsError  # noqa: E402
 from pykorail import __version__ as PYKORAIL_VERSION  # noqa: E402
+from pykorail import constants as pk_constants  # noqa: E402
+from pykorail_wheel import patch_loaded_app_versions  # noqa: E402  (scripts/ is on sys.path)
 
-print(f"python {sys.version.split()[0]} | pykorail {PYKORAIL_VERSION}")
+# -8204 triage: try candidate app versions in memory, without building a
+# wheel. Dispatch with try_app_version / try_api_version; if the searches then
+# succeed, bake the same values in (docs/PYKORAIL_MAINTENANCE.md).
+TRIAL = {const: os.environ.get(env, "").strip()
+         for const, env in (("APP_DISPLAY_VERSION", "TRY_APP_DISPLAY_VERSION"),
+                            ("APP_VERSION", "TRY_APP_VERSION"))}
+TRIAL = {k: v for k, v in TRIAL.items() if v}
+if TRIAL:
+    try:
+        patch_loaded_app_versions(TRIAL)
+    except ValueError as e:
+        print(f"trial app version rejected: {e}")
+        sys.exit(1)
+
+print(f"python {sys.version.split()[0]} | pykorail {PYKORAIL_VERSION} | "
+      f"app {pk_constants.APP_DISPLAY_VERSION} / Version {pk_constants.APP_VERSION}"
+      f"{' (TRIAL, in memory only)' if TRIAL else ''}")
 
 UID, PW = os.environ.get("KORAIL_ID", ""), os.environ.get("KORAIL_PW", "")
 if os.environ.get("PROBE") != "1" or not UID or not PW:

@@ -17,6 +17,14 @@ on:
         type: choice
         options: [korail-home, ubuntu-latest]
         default: korail-home
+      try_app_version:
+        description: "-8204 triage: try this store version (AppVersion, e.g. 7.2.0) in memory. Empty = the wheel's own"
+        type: string
+        default: ""
+      try_api_version:
+        description: "-8204 triage: try this 9-digit Version (e.g. 261201001) in memory. Empty = the wheel's own"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -36,6 +44,9 @@ jobs:
           PROBE: ${{ inputs.run_probe && '1' || '0' }}
           KORAIL_ID: ${{ secrets.KORAIL_ID }}
           KORAIL_PW: ${{ secrets.KORAIL_PW }}
+          # Through env, never interpolated into the script; format-checked there.
+          TRY_APP_DISPLAY_VERSION: ${{ inputs.try_app_version }}
+          TRY_APP_VERSION: ${{ inputs.try_api_version }}
         # A venv because a self-hosted device's system python is often
         # PEP 668 externally-managed and refuses bare pip installs.
         run: |

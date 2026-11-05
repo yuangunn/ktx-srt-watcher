@@ -58,6 +58,10 @@ GitHub 호스팅. 설치·보안 수칙: `docs/SELF_HOSTED_RUNNER.md` — 특히
   필요하다. 2026-11-02 PyPI에서 프로젝트가 삭제되어 `vendor/`의 0.6.1 휠(sha256 검증)을
   경로로 설치한다. 0.2.2는 10/21 코레일 앱 개편 뒤 조회가 -8204로 막힘. 0.3.0 이후
   배포본은 라이선스가 MIT + **상업적 이득 금지** — 출처·라이선스·교체 절차는 `vendor/README.md`
+- **업스트림이 없으니 직접 고친다**: 코레일 앱 개편으로 막히면(`-8204` 등) 휠을
+  `scripts/pykorail_wheel.py`로 풀고 고쳐 `0.6.1+ktx.N`으로 다시 묶는다. 앱 버전은
+  `api-probe`의 `try_app_version`/`try_api_version`으로 휠 없이 먼저 시험.
+  증상표·절차: `docs/PYKORAIL_MAINTENANCE.md`
 - **기기 고정은 프로파일 id + `android_id` 둘 다**: 0.6부터 android_id가 봇 차단 토큰에
   들어가므로 state(`korail_android_id`)에 함께 저장해 재사용
 - **기기 프로파일 고정**: 매 실행 다른 기기로 보이면 봇처럼 보인다. 프로파일 id를
@@ -135,6 +139,7 @@ CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
 - `tests/test_adapters.py`: 어댑터 스모크 + pykorail 매핑. CI에서 돈다 —
   실 계정이 필요한 통합 테스트만 수동 (`api-probe` 워크플로 dispatch)
 - `tests/test_search_failure.py`: provider 전체 검색 실패 감지(감시 중단 알림)
+- `tests/test_vendor_wheel.py`: vendored 휠 RECORD 정합성, 풀기/묶기 왕복, 앱 버전 패치
 
 ## MVP 단계
 1. **Phase 1**: korail/srt adapter, matcher, notifier, state, workflow → 알림까지

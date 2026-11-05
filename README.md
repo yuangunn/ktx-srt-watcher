@@ -343,7 +343,7 @@ PWA `+ 워치 추가` 버튼:
 | 폴링이 설정한 간격보다 늦거나 불규칙함 | 실제 폴링은 CF Worker `*/3 repository_dispatch` 트리거 위에서 워커 throttle로 동작. 폴링은 트리거 경계에만 걸리므로 설정 간격이 3분 단위로 올림됨(24~36 범위 → 24/27/30/33/36). 랜덤 모드는 의도적으로 불규칙. CF Worker 정상 배포 여부는 `npx wrangler tail`로 확인 |
 | 실행이 계속 Queued / "집 러너 응답 없음" 알림 | 집 러너가 꺼져 있음. PC 절전·WSL 종료·러너 서비스 상태 확인. 증상별 표는 [docs/SELF_HOSTED_RUNNER.md](docs/SELF_HOSTED_RUNNER.md) |
 | 로그인 실패 `-8202` "VPN 또는 데이터센터…" | 데이터센터/VPN IP에서 실행된 경우. 폴링 잡이 `[self-hosted, korail-home]`에서 도는지, 집 기기에 VPN이 켜져 있지 않은지 확인 |
-| "감시 중단" 알림 (모든 검색 거부) | 코레일+가 클라이언트를 거부하는 중. 대개 백엔드 변경이라 `pykorail` 교체가 필요([vendor/README.md](vendor/README.md)). `api-probe` 워크플로(집 러너)로 원인 확인 |
+| "감시 중단" 알림 (모든 검색 거부) | 코레일+가 클라이언트를 거부하는 중. `api-probe` 워크플로(집 러너)로 원인 확인 후 vendored `pykorail`을 직접 고침. `-8204`(앱 버전)는 휠 없이 후보값을 시험하는 입력도 있음 — [docs/PYKORAIL_MAINTENANCE.md](docs/PYKORAIL_MAINTENANCE.md) |
 | 모든 실행이 Install deps에서 실패 `No matching distribution found` | PyPI에서 패키지가 사라진 경우(2026-11-02 `pykorail`). 검증된 휠을 `vendor/`에 넣고 `requirements.txt`에서 경로로 설치 — [vendor/README.md](vendor/README.md) |
 | 텔레그램 알림이 안 옴 | 1) `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` GitHub secret 확인. 2) 봇 채팅창에 `/start` 한 번 보냈는지. 3) PWA의 "조용한 시간"이 지금 시간대를 포함하는지 |
 | 자동 예약 직후 "동일한 예약" 에러 | state 기록이 다음 run보다 늦게 반영된 case. 어댑터가 `WRR800029` / "동일한 예약" 메시지를 detect하면 silent dedupe — 정상 동작 |
@@ -406,8 +406,9 @@ ktx-srt-watcher/
 │   ├── tests.yml                 # pytest (PR / main)
 │   ├── api-probe.yml             # 실계정 백엔드 점검 (수동)
 │   └── deploy-worker.yml         # cloudflare-worker/ 변경 시 자동 배포
-├── scripts/                      # api_probe.py, Actions 로그 정리
+├── scripts/                      # api_probe.py, pykorail_wheel.py(휠 패치), Actions 로그 정리
 ├── docs/SELF_HOSTED_RUNNER.md    # 집 러너 설치 가이드
+├── docs/PYKORAIL_MAINTENANCE.md  # 코레일 앱 개편 시 pykorail 직접 고치기
 └── requirements.txt
 ```
 
