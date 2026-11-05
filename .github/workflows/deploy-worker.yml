@@ -34,7 +34,7 @@ jobs:
     # push, so a fork (or this repo before step 2 above) stays green.
     if: github.repository == 'yuangunn/ktx-srt-watcher'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:

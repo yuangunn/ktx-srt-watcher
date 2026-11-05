@@ -45,7 +45,7 @@ jobs:
     runs-on: [self-hosted, korail-home]
     timeout-minutes: 8        # cron 간격보다 짧게
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Cheap pre-install gate (stdlib only, no pip). Most ticks are throttled
       # skips; deciding here lets us bypass the ~15s install + poll, so the
