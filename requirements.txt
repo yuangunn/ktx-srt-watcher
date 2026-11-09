@@ -20,5 +20,5 @@
 ./vendor/pykorail-0.6.1-py3-none-any.whl
 curl-cffi==0.16.3
 requests>=2.31.0
-pydantic>=2.5.0
+pydantic>=2.14.3
 pytest>=8.0.0
